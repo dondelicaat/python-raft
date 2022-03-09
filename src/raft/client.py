@@ -1,6 +1,6 @@
 import socket
 
-from raft.message import Message, SetValue, GetValue, DelValue
+from raft.message import Message, SetValue, GetValue, DelValue, Close
 from src.raft.fixed_header_message import FixedHeaderMessageProtocol
 
 
@@ -17,6 +17,8 @@ class Client:
         self.socket.connect((self.host, self.port))
 
     def close(self):
+        msg = Message(Close())
+        self.protocol.send_message(self.socket, bytes(msg))
         self.socket.close()
 
     def __setitem__(self, key, value):
@@ -29,7 +31,7 @@ class Client:
         msg = Message(GetValue(key))
         self.protocol.send_message(self.socket, bytes(msg))
         response = self.protocol.receive_message(self.socket)
-        return Message.from_bytes(response)
+        return Message.from_bytes(response).action.value
 
     def __delitem__(self, key):
         msg = Message(DelValue(key))
@@ -45,5 +47,4 @@ if __name__ == "__main__":
         protocol=protocol
     )
     client.connect()
-    client["key"] = "hoi"
     client.close()

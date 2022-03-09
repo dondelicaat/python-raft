@@ -6,7 +6,8 @@ GetValue = NamedTuple("GetValue", key=str)
 DelValue = NamedTuple("DelValue", key=str)
 Value    = NamedTuple("Value", value=str)
 Ok       = NamedTuple("Ok", value=bool)
-Action = Union[SetValue, GetValue, DelValue, Value, Ok]
+Close    = NamedTuple("Close")
+Action = Union[SetValue, GetValue, DelValue, Value, Ok, Close]
 
 
 class Message:

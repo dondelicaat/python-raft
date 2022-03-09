@@ -1,44 +1,39 @@
 from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class StorageClient:
-    def __init__(self, log_file_path: str, aof_file_path):
-        self.log_file_path = log_file_path
+    def __init__(self, aof_file_path):
         self.aof_file_path = aof_file_path
         # Ensure files exist.
-        Path(self.log_file_path).touch(exist_ok=True)
         Path(self.aof_file_path).touch(exist_ok=True)
         self.dict = {}
 
     def __enter__(self):
+        logger.info("Setting up connection to %s", format(self.aof_file_path))
         self.aof_connection = open(self.aof_file_path, 'a+')
 
-    def __exit__(self):
+    def __exit__(self, exception_type, exception_value, traceback):
+        logger.info("Closing connection")
         self.aof_connection.close()
-
-    def load(self):
-        self.dict = {}
-        with open(self.log_file_path, 'r+') as f:
-            for line in f.readlines():
-                key, val = line.split(':')
-                self.dict[key] = val
-
-    def dump(self):
-        with open(self.log_file_path, 'w+') as f:
-            for key, val in self.dict:
-                f.write(f"{key}:{val}")
 
     def write_aof(self, cmd):
         self.aof_connection.write(cmd + '\n')
+        self.aof_connection.flush()
 
     def replay_aof(self):
+        logger.info("Replaying aof log.")
         self.dict = {}
+        # need to set cursor to start at file since in append mode.
+        self.aof_connection.seek(0)
         for line in self.aof_connection.readlines():
             if "SET" in line:
-                cmd, key, val = line.split(':')
+                cmd, key, val = line.strip().split(':')
                 self.dict[key] = val
             if "DEL" in line:
-                cmd, key = line.split(":")
+                cmd, key = line.strip().split(":")
                 del self.dict[key]
 
     def __setitem__(self, key, value):
