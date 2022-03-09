@@ -47,4 +47,6 @@ if __name__ == "__main__":
         protocol=protocol
     )
     client.connect()
+    client["TEST"] = "KEY"
+    print(client["k"])
     client.close()

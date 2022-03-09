@@ -7,17 +7,27 @@ logger = logging.getLogger(__name__)
 class StorageClient:
     def __init__(self, aof_file_path):
         self.aof_file_path = aof_file_path
+        self.aof_connection = None
         # Ensure files exist.
         Path(self.aof_file_path).touch(exist_ok=True)
         self.dict = {}
 
-    def __enter__(self):
+    def start(self):
         logger.info("Setting up connection to %s", format(self.aof_file_path))
         self.aof_connection = open(self.aof_file_path, 'a+')
+        logger.info("Replaying append only file.")
+        self.replay_aof()
+        logger.info("Done setting up.")
 
-    def __exit__(self, exception_type, exception_value, traceback):
+    def stop(self):
         logger.info("Closing connection")
         self.aof_connection.close()
+
+    def __enter__(self):
+        self.start()
+
+    def __exit__(self, exception_type, exception_value, traceback):
+        self.stop()
 
     def write_aof(self, cmd):
         self.aof_connection.write(cmd + '\n')
