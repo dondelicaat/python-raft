@@ -1,5 +1,6 @@
 import logging
 from queue import Queue
+from collections import deque
 from threading import Thread
 
 from raft.fixed_header_message import FixedHeaderMessageProtocol
@@ -12,16 +13,22 @@ logger = logging.getLogger(__name__)
 
 class ServerController:
     def __init__(
-        self, queue: Queue, storage_client: StorageClient,
-        protocol: FixedHeaderMessageProtocol, port: int, host: str,
+        self, storage_client: StorageClient,
+        protocol: FixedHeaderMessageProtocol,
+        port: int, host: str,
     ):
+        self.input_queue = Queue()
+        self.output_queue = deque()
+
         self.message_processor = MessageProcessor(
-            queue=queue, storage_client=storage_client,
-            protocol=protocol
+            in_queue=self.input_queue,
+            out_queue=self.output_queue,
+            storage_client=storage_client
         )
         self.server = KeyValueServer(
             host=host, port=port,
-            queue=queue,
+            input_queue=self.input_queue,
+            output_queue=self.output_queue,
             protocol=protocol
         )
 
@@ -39,19 +46,10 @@ class ServerController:
 
 if __name__ == "__main__":
     protocol = FixedHeaderMessageProtocol(header_size=8)
-    data_path = "/Users/4468379/Documents/xccelerated/raft/data"
-    aof_log = data_path + "/aof.log"
+    aof_log = "/Users/4468379/Documents/xccelerated/raft/data/aof.log"
     storage_client = StorageClient(aof_file_path=aof_log)
 
-    message_queue = Queue()
-
-    message_processor = MessageProcessor(
-        queue=message_queue, storage_client=storage_client,
-        protocol=protocol
-    )
-
     server_controller = ServerController(
-        queue=message_queue,
         storage_client=storage_client,
         protocol=protocol,
         port=8000,

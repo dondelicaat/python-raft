@@ -1,7 +1,10 @@
 import socket
 import logging
+import time
+import uuid
 from threading import Thread
 from queue import Queue
+from collections import deque
 
 from raft.fixed_header_message import FixedHeaderMessageProtocol
 from raft.message import Message, Close
@@ -12,13 +15,15 @@ logging.basicConfig(level=logging.INFO)
 class KeyValueServer:
     def __init__(
             self, host, port, protocol: FixedHeaderMessageProtocol,
-            queue: Queue, concurrent_clients=16
+            input_queue: Queue, output_queue: deque,
+            concurrent_clients=16
     ):
         self.host = host
         self.port = port
         self.protocol = protocol
         self.concurrent_clients = concurrent_clients
-        self.queue = queue
+        self.in_queue = input_queue
+        self.out_queue = output_queue
 
     def run(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -37,6 +42,7 @@ class KeyValueServer:
 
     def handle_client(self, client, client_address):
         logging.info("started a new connection")
+        client_id = str(uuid.uuid4())
 
         with client:
             while True:
@@ -45,5 +51,15 @@ class KeyValueServer:
                 if isinstance(msg.action, Close):
                     logging.info("Closing connection")
                     break
-                self.queue.put((msg, client))
+                self.in_queue.put((msg, client_id))
+
+                while True:
+                    if not self.out_queue:
+                        time.sleep(0.001)
+
+                    next_msg, next_client_id = self.out_queue[-1]
+                    if next_client_id == client_id:
+                        next_msg, next_client_id = self.out_queue.pop()
+                        self.protocol.send_message(client, bytes(next_msg))
+                        break
 

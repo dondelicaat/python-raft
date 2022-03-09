@@ -1,7 +1,7 @@
 import logging
 from queue import Queue
+from collections import deque
 
-from raft.fixed_header_message import FixedHeaderMessageProtocol
 from raft.storageclient import StorageClient
 from raft.message import Message, SetValue, GetValue, Ok, Value, DelValue
 
@@ -9,10 +9,10 @@ logger = logging.getLogger(__name__)
 
 
 class MessageProcessor:
-    def __init__(self, queue: Queue, storage_client: StorageClient, protocol: FixedHeaderMessageProtocol):
-        self.queue = queue
+    def __init__(self, in_queue: Queue, out_queue: deque, storage_client: StorageClient):
+        self.out_queue = out_queue
+        self.in_queue = in_queue
         self.storage_client = storage_client
-        self.protocol = protocol
 
     def start(self):
         self.storage_client.start()
@@ -22,9 +22,9 @@ class MessageProcessor:
 
     def process(self):
         while True:
-            message, socket = self.queue.get(block=True)
+            message, client_id = self.in_queue.get(block=True)
             resp = self.handle_msg(message)
-            self.protocol.send_message(socket, bytes(resp))
+            self.out_queue.appendleft((resp, client_id))
 
     def handle_msg(self, msg: Message) -> Message:
         if isinstance(msg.action, SetValue):
