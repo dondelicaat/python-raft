@@ -1,7 +1,7 @@
 import socket
 
-from raft.message import Message, SetValue, GetValue, DelValue, Close
-from src.raft.fixed_header_message import FixedHeaderMessageProtocol
+from practice.message import Message, SetValue, GetValue, DelValue, Close
+from src.practice.fixed_header_message import FixedHeaderMessageProtocol
 
 
 class Client:

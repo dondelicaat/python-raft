@@ -2,14 +2,14 @@ import logging
 from queue import Queue
 from collections import deque
 
-from raft.storageclient import StorageClient
-from raft.message import Message, SetValue, GetValue, Ok, Value, DelValue
+from practice.storageclient import StorageClient
+from practice.message import Message, SetValue, GetValue, Ok, Value, DelValue
 
 logger = logging.getLogger(__name__)
 
 
 class MessageProcessor:
-    def __init__(self, in_queue: Queue, out_queue: deque, storage_client: StorageClient):
+    def __init__(self, in_queue: Queue, out_queue: Queue, storage_client: StorageClient):
         self.out_queue = out_queue
         self.in_queue = in_queue
         self.storage_client = storage_client
@@ -24,7 +24,7 @@ class MessageProcessor:
         while True:
             message, client_id = self.in_queue.get(block=True)
             resp = self.handle_msg(message)
-            self.out_queue.appendleft((resp, client_id))
+            self.out_queue.put((resp, client_id))
 
     def handle_msg(self, msg: Message) -> Message:
         if isinstance(msg.action, SetValue):

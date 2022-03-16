@@ -3,10 +3,10 @@ from queue import Queue
 from collections import deque
 from threading import Thread
 
-from raft.fixed_header_message import FixedHeaderMessageProtocol
-from raft.keyval_server import KeyValueServer
-from raft.message_processor import MessageProcessor
-from raft.storageclient import StorageClient
+from practice.fixed_header_message import FixedHeaderMessageProtocol
+from practice.keyval_server import KeyValueServer
+from practice.message_processor import MessageProcessor
+from practice.storageclient import StorageClient
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,7 @@ class ServerController:
         port: int, host: str,
     ):
         self.input_queue = Queue()
-        self.output_queue = deque()
+        self.output_queue = Queue()
 
         self.message_processor = MessageProcessor(
             in_queue=self.input_queue,
@@ -46,7 +46,7 @@ class ServerController:
 
 if __name__ == "__main__":
     protocol = FixedHeaderMessageProtocol(header_size=8)
-    aof_log = "/Users/4468379/Documents/xccelerated/raft/data/aof.log"
+    aof_log = "/Users/4468379/Documents/xccelerated/practice/data/aof.log"
     storage_client = StorageClient(aof_file_path=aof_log)
 
     server_controller = ServerController(

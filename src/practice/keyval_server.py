@@ -6,8 +6,8 @@ from threading import Thread
 from queue import Queue
 from collections import deque
 
-from raft.fixed_header_message import FixedHeaderMessageProtocol
-from raft.message import Message, Close
+from practice.fixed_header_message import FixedHeaderMessageProtocol
+from practice.message import Message, Close
 
 logging.basicConfig(level=logging.INFO)
 
@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO)
 class KeyValueServer:
     def __init__(
             self, host, port, protocol: FixedHeaderMessageProtocol,
-            input_queue: Queue, output_queue: deque,
+            input_queue: Queue, output_queue: Queue,
             concurrent_clients=16
     ):
         self.host = host
@@ -24,6 +24,7 @@ class KeyValueServer:
         self.concurrent_clients = concurrent_clients
         self.in_queue = input_queue
         self.out_queue = output_queue
+        self.clients = {}
 
     def run(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -40,6 +41,12 @@ class KeyValueServer:
                 client_connection = Thread(target=self.handle_client, args=(client, client_address))
                 client_connection.start()
 
+    def handle_output(self):
+        while True:
+            client_id, message = self.out_queue.get()
+            client = self.clients[client_id]
+            self.protocol.send_message(socket=client, body=bytes(message))
+
     def handle_client(self, client, client_address):
         logging.info("started a new connection")
         client_id = str(uuid.uuid4())
@@ -52,14 +59,5 @@ class KeyValueServer:
                     logging.info("Closing connection")
                     break
                 self.in_queue.put((msg, client_id))
-
-                while True:
-                    if not self.out_queue:
-                        time.sleep(0.001)
-
-                    next_msg, next_client_id = self.out_queue[-1]
-                    if next_client_id == client_id:
-                        next_msg, next_client_id = self.out_queue.pop()
-                        self.protocol.send_message(client, bytes(next_msg))
-                        break
+                self.clients[client_id] = client
 
