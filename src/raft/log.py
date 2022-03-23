@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from typing import List
+from collections import UserList
 
 
 @dataclass
@@ -12,46 +13,63 @@ class TermNotOk(Exception):
     pass
 
 
+class OneIndexList(UserList):
+    def __init__(self, _list=None):
+        super().__init__()
+        if _list:
+            self.data = _list
+
+    def __getitem__(self, index):
+        if isinstance(index, slice):
+            start, stop = None, None
+            if index.start:
+                start = index.start - 1
+            if index.stop:
+                stop = index.stop - 1
+            return self.data[slice(start, stop)]
+        else:
+            return self.data[index - 1]
+
+    def __setitem__(self, index, value):
+        self.data[index - 1] = value
+
+    def __delitem__(self, index):
+        del self.data[index - 1]
+
+    def append(self, value: LogEntry):
+        self.data.append(value)
+
+
 class Log:
     def __init__(self):
-        self.logs = []
+        self.logs = OneIndexList()
         
     def recover(self):
         pass
 
-    def append(self, entry: LogEntry):
-        self.logs.append(entry)
-
     def append_entries(self, prev_log_index, prev_log_term, entries: List[LogEntry]):
         if prev_log_index == 0:
-            self.truncate(1)
+            self.truncate()
             for entry in entries:
-                self.append(entry)
+                self.logs.append(entry)
             return
 
-        prev_log_entry = self.get_log_entry(prev_log_index)
+        prev_log_entry = self.logs[prev_log_index]
         if prev_log_entry.term != prev_log_term:
             raise TermNotOk(f"Current prev log entry: {prev_log_entry.term} != {prev_log_term}")
 
         for index, entry in enumerate(entries):
             entry_log_index = prev_log_index + index + 1
             if len(self.logs) < entry_log_index:
-                self.append(entry)
+                self.logs.append(entry)
             else:
-                current_entry = self.get_log_entry(entry_log_index)
+                current_entry = self.logs[entry_log_index]
                 if current_entry.term != entry.term:
-                    self.logs[entry_log_index - 1] = entry
+                    self.logs[entry_log_index] = entry
                     self.truncate(entry_log_index + 1)
 
-    # Both functions under here have off by one.
-    def get_log_entry(self, index) -> LogEntry:
-        return self.logs[index - 1]
+    def truncate(self, index=1):
+        self.logs = self.logs[:index]
 
-    def get_log_entries(self, index) -> List[LogEntry]:
-        return self.logs[index - 1:]
-
-    def truncate(self, index):
-        self.logs = self.logs[:index - 1]
-
-    def get_last_index(self) -> int:
-        return len(self.logs)
+    def __getitem__(self, index):
+        return self.logs[index]
