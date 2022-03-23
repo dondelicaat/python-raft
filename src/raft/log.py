@@ -23,19 +23,25 @@ class Log:
         self.logs.append(entry)
 
     def append_entries(self, prev_log_index, prev_log_term, entries: List[LogEntry]):
+        if prev_log_index == 0:
+            self.truncate(1)
+            for entry in entries:
+                self.append(entry)
+            return
+
         prev_log_entry = self.get_log_entry(prev_log_index)
         if prev_log_entry.term != prev_log_term:
-            raise TermNotOk(f"Current prev log entry: {prev_log_term} != {prev_log_term}")
+            raise TermNotOk(f"Current prev log entry: {prev_log_entry.term} != {prev_log_term}")
 
         for index, entry in enumerate(entries):
-            entry_log_index = prev_log_index + index
+            entry_log_index = prev_log_index + index + 1
             if len(self.logs) < entry_log_index:
                 self.append(entry)
             else:
                 current_entry = self.get_log_entry(entry_log_index)
                 if current_entry.term != entry.term:
                     self.logs[entry_log_index - 1] = entry
-                    self.truncate(entry_log_index)
+                    self.truncate(entry_log_index + 1)
 
     # Both functions under here have off by one.
     def get_log_entry(self, index) -> LogEntry:
