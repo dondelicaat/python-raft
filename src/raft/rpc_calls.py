@@ -15,7 +15,7 @@ AppendEntriesRequest = NamedTuple(
 AppendEntriesReply = NamedTuple(
     "AppendEntriesReply",
     term=int,
-    succes=bool
+    succes=bool,
 )
 RequestVoteRequest = NamedTuple(
     "RequestVoteRequest",
@@ -33,6 +33,8 @@ Command = NamedTuple(
     "Command",
     cmd=str,
 )
+
+Close = NamedTuple("Close")
 Ok = NamedTuple(
     "Ok",
 )

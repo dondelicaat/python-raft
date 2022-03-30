@@ -5,12 +5,12 @@ from threading import Thread
 from queue import Queue
 
 from raft.fixed_header_message import FixedHeaderMessageProtocol
-from raft.rpc_calls import AppendEntries, RequestVote
+from raft.rpc_calls import Message, Close
 
 logging.basicConfig(level=logging.INFO)
 
 
-class KeyValueServer:
+class RaftServer:
     def __init__(
             self, host, port, protocol: FixedHeaderMessageProtocol,
             input_queue: Queue, output_queue: Queue,
@@ -55,6 +55,7 @@ class KeyValueServer:
                 msg = Message.from_bytes(msg_bytes)
                 if isinstance(msg.action, Close):
                     logging.info("Closing connection")
+                    del self.clients[client_id]
                     break
                 self.in_queue.put((msg, client_id))
                 self.clients[client_id] = client
