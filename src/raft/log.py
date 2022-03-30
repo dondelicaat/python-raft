@@ -91,9 +91,9 @@ class Log:
             raise TermNotOk(f"Current prev log entry: {self.logs[prev_log_index].term} != {prev_log_term}")
 
         for idx, entry in enumerate(entries, prev_log_index + 1):
-            if idx < len(self.logs) and self.logs[idx].term != entry.term:
+            if idx <= len(self.logs) and self.logs[idx].term != entry.term:
                 # we already have an entry at idx that conflicts
-                self.truncate(idx + 1)
+                self.truncate(idx)
             elif idx < len(self.logs):
                 continue
             elif entry != entry:
