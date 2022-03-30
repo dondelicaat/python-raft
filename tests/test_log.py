@@ -34,6 +34,8 @@ def test_append(log_fixture, prev_log_term, prev_log_index, initial_log, entries
         [LogEntry(1), LogEntry(3), LogEntry(5)]),
         (1, 1, [LogEntry(1), LogEntry(2)], [LogEntry(1), LogEntry(3), LogEntry(5)],
         [LogEntry(1), LogEntry(1), LogEntry(3), LogEntry(5)]),
+        (0, 0, [LogEntry(1), LogEntry(2)], [LogEntry(1), LogEntry(3), LogEntry(5)],
+        [LogEntry(1), LogEntry(3), LogEntry(5)]),
     ]
 )
 def test_overwrite_and_truncate(log_fixture, prev_log_term, prev_log_index, initial_log, entries, expected):

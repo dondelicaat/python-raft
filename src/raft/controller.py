@@ -16,25 +16,23 @@ class RaftServerController:
         self.port = base_port + server_id
         try:
             self.log_file = open(f"/tmp/data_{server_id}.log", 'w+')
-        except OSError:
+        except OSError as e:
             print(f"OSError: {e}")
             raise
         servers = [('localhost', base_port + idx) for idx in range(num_servers) if idx != server_id]
 
-        input_queue = Queue()
-        output_queue = Queue()
+        self.inbox = Queue()
+        self.outbox = Queue()
         self.raft = Raft(
             servers=servers,
-            inbox=input_queue,
-            outbox=output_queue,
+            outbox=self.outbox,
             log=Log(self.log_file)
         )
         self.raft_server = RaftServer(
             host=self.host,
             port=self.port,
             protocol=FixedHeaderMessageProtocol(8),
-            input_queue=input_queue,
-            output_queue=output_queue,
+            inbox=self.inbox,
         )
 
     def do_tick(self):
@@ -48,22 +46,23 @@ class RaftServerController:
     def handle_inbox(self):
         while True:
             message, client_id = self.inbox.get(block=True)
-            resp = self.handle_msg(message)
-            self.outbox.put((resp, client_id))
-        pass
+            self.raft.handle_msg(message)
 
     def handle_outbox(self):
-        pass
+        while True:
+            client_id, message = self.outbox.get()
+            self.raft_server.send(client_id, message)
 
     def run(self):
-        raft_server_inbox_thread = Thread(target=self.raft_server.run)
-        raft_server_outbox_thread = Thread(target=self.raft_server.handle_output)
-        raft_server_inbox_thread.start()
-        raft_server_outbox_thread.start()
-
-        raft_request_processor = Thread(target=self.raft.handle_msg)
+        raft_server_thread = Thread(target=self.raft_server.run)
+        handle_outbox_thread = Thread(target=self.handle_outbox)
+        handle_input_thread = Thread(target=self.handle_inbox)
         raft_clock_driver = Thread(target=self.drive_clock)
-        raft_request_processor.start()
+        # leader_heartbeat_driver()
+
+        raft_server_thread.start()
+        handle_outbox_thread.start()
+        handle_input_thread.start()
         raft_clock_driver.start()
 
 

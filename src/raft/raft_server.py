@@ -13,15 +13,14 @@ logging.basicConfig(level=logging.INFO)
 class RaftServer:
     def __init__(
             self, host, port, protocol: FixedHeaderMessageProtocol,
-            input_queue: Queue, output_queue: Queue,
+            inbox: Queue,
             concurrent_clients=16
     ):
         self.host = host
         self.port = port
         self.protocol = protocol
         self.concurrent_clients = concurrent_clients
-        self.in_queue = input_queue
-        self.out_queue = output_queue
+        self.inbox = inbox
         self.clients = {}
 
     def run(self):
@@ -39,12 +38,6 @@ class RaftServer:
                 client_connection = Thread(target=self.handle_client, args=(client, client_address))
                 client_connection.start()
 
-    def handle_output(self):
-        while True:
-            client_id, message = self.out_queue.get()
-            client = self.clients[client_id]
-            self.protocol.send_message(socket=client, body=bytes(message))
-
     def handle_client(self, client, client_address):
         logging.info("started a new connection")
         client_id = str(uuid.uuid4())
@@ -57,9 +50,11 @@ class RaftServer:
                     logging.info("Closing connection")
                     del self.clients[client_id]
                     break
-                self.in_queue.put((msg, client_id))
+                self.inbox.put((msg, client_id))
                 self.clients[client_id] = client
 
-    def send(self, client_id, msg):
-        pass
+    def send(self, client_id, message):
+        # Todo: error handling
+        client = self.clients[client_id]
+        self.protocol.send_message(socket=client, body=bytes(message))
 

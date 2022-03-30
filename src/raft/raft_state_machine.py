@@ -1,7 +1,7 @@
 from queue import Queue
 from random import randint
 
-from raft.log import Log, TermNotOk
+from raft.log import Log, TermNotOk, LogNotCaughtUpException
 from raft.rpc_calls import AppendEntriesRequest, AppendEntriesReply, RequestVoteReply, \
     RequestVoteRequest, Message
 
@@ -10,24 +10,21 @@ class Raft:
     def __init__(
         self,
         servers,
-        inbox: Queue,
         outbox: Queue,
         log: Log,
         role="follower",
-        current_term=0,
         timeout_provider=lambda: randint(150, 300),
     ):
         self.role = role
         self.servers = servers
         self.num_servers = len(servers) + 1  # counting for itself.
         self.outbox = outbox
-        self.inbox = inbox
         self.log = log
         self.leader_id = None
 
         self.votes_received = 0
         self.voted_for = None  # todo, some id?
-        self.current_term = current_term
+        self.current_term = 0  # Fetch from persisted state
 
         self.request_timeout_ms = 50
         self.timeout_ms = None
@@ -41,19 +38,20 @@ class Raft:
         self.match_index = []
 
         # self.log.replay()
-        # nextIndex = array[indexOfFollower <-> entries]
-        # matchIndex = array[indexReplicatedFollowers <-> entries]
+        if role == "leader":
+            last_log_index = len(self.log)
+            self.next_index = [last_log_index for _ in servers]  # array[indexOfFollower <-> entries]
+            self.match_index = [0 for _ in servers]  # array[indexReplicatedFollowers <-> entries]
 
     def set_timeout(self):
         self.timeout_ms = self.timeout_provider()
 
+    def handle_heartbeat(self):
+        pass
+
     def handle_append_entries(self, message: AppendEntriesRequest) -> AppendEntriesReply:
-        if message.term < self.current_term:
-            return AppendEntriesReply(self.current_term, False)
-
-        self.set_timeout()
-
         assert self.role == "follower"
+        self.set_timeout()
 
         try:
             self.log.append_entries(
@@ -64,9 +62,9 @@ class Raft:
 
             if message.leader_commit > self.commit_index:
                 self.commit_index = min(message.leader_commit, len(self.log))
-
             return AppendEntriesReply(self.current_term, True)
-        except (TermNotOk, IndexError):
+
+        except (TermNotOk, LogNotCaughtUpException):
             return AppendEntriesReply(self.current_term, False)
 
     def handle_request_vote(self, message: RequestVoteRequest) -> RequestVoteReply:
@@ -147,34 +145,3 @@ class Raft:
             raise ValueError(f"Unknown request {msg}")
 
         return Message.from_bytes(bytes(reply))
-    #
-    # def broadcast_election(self):
-    #     request_vote_request = RequestVoteRequest(
-    #         term=self.current_term,
-    #         candidate_id=..., #todo: self.id,
-    #         last_log_index=self.last_applied,
-    #         last_log_term=self.log.get_log_entry(self.last_applied).term,
-    #     )
-    #     for server in self.servers:
-    #         self.outbox.put(server.id, request_vote_request)
-    #
-    # def broadcast_messages(self, messages: List[LogEntry]):
-    #     append_entries_request = AppendEntriesRequest(
-    #         term=self.current_term,
-    #         leader_id=..., #todo: self.id
-    #         prev_log_index=...,
-    #         prev_log_term=...,
-    #         entries=messages,
-    #         leader_commit=...,
-    #     )
-    #
-    #     for server in self.servers:
-    #         self.outbox.put(server.id, append_entries_request)
-    #
-    # def handle_client_request(self, msg: Command, client_id: str):
-    #     if self.role == "leader":
-    #         ... # handle_add_msg leader rules
-    #         self.outbox.put((client_id, msg))
-    #     if self.role == "follower":
-    #         # Redirects the msg to the leader.
-    #         self.outbox.put((self.leader_id, msg))

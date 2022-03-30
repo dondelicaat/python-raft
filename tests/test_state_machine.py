@@ -1,4 +1,3 @@
-from queue import Queue
 from unittest.mock import MagicMock
 
 import pytest
