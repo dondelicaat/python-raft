@@ -93,5 +93,8 @@ class Log:
     def truncate(self, index=1):
         self.logs = self.logs[:index]
 
+    def __getitem__(self, index):
+        return self.logs[index]
+
     def __len__(self):
         return len(self.logs)
