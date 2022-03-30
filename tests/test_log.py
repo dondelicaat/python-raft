@@ -23,8 +23,19 @@ def test_term_error():
     pass
 
 
-def test_overwrite_and_truncate():
-    pass
+@pytest.mark.parametrize("prev_log_term,prev_log_index,initial_log,entries,expected",
+    [
+        (0, 0, [LogEntry(1)], [LogEntry(2)], [LogEntry(2)]),
+        # (0, 0, [], [LogEntry(1), LogEntry(2), LogEntry(2)], [LogEntry(1), LogEntry(2), LogEntry(2)]),
+        # (2, 2, [LogEntry(1), LogEntry(2)], [LogEntry(3), LogEntry(3), LogEntry(5)],
+        # [LogEntry(1), LogEntry(2), LogEntry(3), LogEntry(3), LogEntry(5)]),
+    ]
+)
+def test_overwrite_and_truncate(log_fixture, prev_log_term, prev_log_index, initial_log, entries, expected):
+    log_fixture.logs = OneIndexList(initial_log)
+    log_fixture.append_entries(prev_log_term=prev_log_term, prev_log_index=prev_log_index,
+                               entries=entries)
+    assert log_fixture.logs == expected
 
 
 @pytest.mark.parametrize("prev_log_term,prev_log_index,initial_log,entries,expected",
@@ -36,7 +47,7 @@ def test_overwrite_and_truncate():
     ]
 )
 def test_append(log_fixture, prev_log_term, prev_log_index, initial_log, entries, expected):
-    log_fixture.logs = initial_log
+    log_fixture.logs = OneIndexList(initial_log)
     log_fixture.append_entries(prev_log_term=prev_log_term, prev_log_index=prev_log_index, entries=entries)
     assert log_fixture.logs == expected
 

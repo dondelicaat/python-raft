@@ -45,6 +45,16 @@ class RaftServerController:
             time.sleep(1 / ticks_per_second)
             self.do_tick()
 
+    def handle_inbox(self):
+        while True:
+            message, client_id = self.inbox.get(block=True)
+            resp = self.handle_msg(message)
+            self.outbox.put((resp, client_id))
+        pass
+
+    def handle_outbox(self):
+        pass
+
     def run(self):
         raft_server_inbox_thread = Thread(target=self.raft_server.run)
         raft_server_outbox_thread = Thread(target=self.raft_server.handle_output)

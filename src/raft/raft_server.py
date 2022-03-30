@@ -60,3 +60,6 @@ class RaftServer:
                 self.in_queue.put((msg, client_id))
                 self.clients[client_id] = client
 
+    def send(self, client_id, msg):
+        pass
+

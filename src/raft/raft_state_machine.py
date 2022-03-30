@@ -48,39 +48,34 @@ class Raft:
         self.timeout_ms = self.timeout_provider()
 
     def handle_append_entries(self, message: AppendEntriesRequest) -> AppendEntriesReply:
-        self.set_timeout()
-
         if message.term < self.current_term:
             return AppendEntriesReply(self.current_term, False)
 
-        if self.role == "follower":
-            try:
-                self.log.append_entries(
-                    prev_log_index=message.prev_log_index,
-                    prev_log_term=message.prev_log_term,
-                    entries=message.entries,
-                )
+        self.set_timeout()
 
-                if message.leader_commit > self.commit_index:
-                    self.commit_index = min(message.leader_commit, len(self.log))
+        assert self.role == "follower"
 
-                return AppendEntriesReply(self.current_term, True)
-            except (TermNotOk, IndexError):
-                return AppendEntriesReply(self.current_term, False)
+        try:
+            self.log.append_entries(
+                prev_log_index=message.prev_log_index,
+                prev_log_term=message.prev_log_term,
+                entries=message.entries,
+            )
 
-        elif message.term >= self.current_term:
-            self.leader_id = message.leader_id
-            self._set_follower()
-            return AppendEntriesReply(self.current_term, False)  #todo: is this correct?
+            if message.leader_commit > self.commit_index:
+                self.commit_index = min(message.leader_commit, len(self.log))
+
+            return AppendEntriesReply(self.current_term, True)
+        except (TermNotOk, IndexError):
+            return AppendEntriesReply(self.current_term, False)
 
     def handle_request_vote(self, message: RequestVoteRequest) -> RequestVoteReply:
-        if message.term < self.current_term:
-            return RequestVoteReply(self.current_term, False)
-        elif (
+        if (
             self.voted_for is None or self.voted_for == message.candidate_id
             and message.last_log_index >= len(self.log)
-        ):  # should term also be the same?
+        ):  # should term also be the same? # see page 8 4.2.1 last paragraph
             self.voted_for = message.candidate_id
+            self.set_timeout()
             return RequestVoteReply(self.current_term, True)
 
         return RequestVoteReply(self.current_term, False)
@@ -107,6 +102,7 @@ class Raft:
 
     def handle_vote(self):
         self.votes_received += 1
+        # Turn into a set of votes => handles idempotent votes.
         if self.received_majority_vote() and self.role == "candidate":
             self._set_leader()
 
@@ -133,19 +129,22 @@ class Raft:
         self.voted_for = None
         self.set_timeout()
 
-    def process(self):
-        while True:
-            message, client_id = self.inbox.get(block=True)
-            resp = self.handle_msg(message)
-            self.outbox.put((resp, client_id))
-
     def handle_msg(self, msg: Message):
+        if msg.action.term < self.current_term:
+            return None
+
+        elif msg.action.term >= self.current_term:
+            self.current_term = msg.action.term
+            self.leader_id = msg.action.leader_id
+            self._set_follower()
+            return AppendEntriesReply(self.current_term, False)  # todo: is this correct?
+
         if isinstance(msg.action, AppendEntriesRequest):
             reply = self.handle_append_entries(msg.action)
         elif isinstance(msg.action, RequestVoteRequest):
             reply = self.handle_request_vote(msg.action)
         else:
-            raise ValueError("Unknown request.")
+            raise ValueError(f"Unknown request {msg}")
 
         return Message.from_bytes(bytes(reply))
     #

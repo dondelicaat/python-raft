@@ -5,6 +5,7 @@ from logging import getLogger
 
 logger = getLogger(__name__)
 
+
 @dataclass
 class LogEntry:
     term: int
@@ -12,6 +13,14 @@ class LogEntry:
 
 
 class TermNotOk(Exception):
+    pass
+
+
+class LogNotCaughtUpException(Exception):
+    pass
+
+
+class MessageConflict(Exception):
     pass
 
 
@@ -48,26 +57,49 @@ class Log:
         self.logs = OneIndexList()
         self.log_file = log_file
 
-    def append_entries(self, prev_log_index, prev_log_term, entries: List[LogEntry]):
-        if prev_log_index == 0:
-            self.truncate()
-            for entry in entries:
-                self.logs.append(entry)
-        else:
-            prev_log_entry = self.logs[prev_log_index]
-            if prev_log_entry.term != prev_log_term:
-                raise TermNotOk(f"Current prev log entry: {prev_log_entry.term} != {prev_log_term}")
+    # def append_entries(self, prev_log_index, prev_log_term, entries: List[LogEntry]):
+    #     if prev_log_index == 0:
+    #         # todo: check if there is a conflict and only if there is truncate, else replace.
+    #         self.truncate()
+    #         for entry in entries:
+    #             self.logs.append(entry)
+    #     else:
+    #         if prev_log_index > len(self.logs):
+    #             raise LogEntryError(f"{prev_log_term} is larger than biggest index in log {len(self.logs)}")
+    #
+    #         prev_log_entry = self.logs[prev_log_index]
+    #         if prev_log_entry.term != prev_log_term:
+    #             raise TermNotOk(f"Current prev log entry: {prev_log_entry.term} != {prev_log_term}")
+    #
+    #         for index, entry in enumerate(entries, start=1):
+    #             entry_log_index = prev_log_index + index
+    #             if len(self.logs) < entry_log_index:
+    #                 self.logs.append(entry)
+    #             else:
+    #                 current_entry = self.logs[entry_log_index]
+    #                 if current_entry.term != entry.term:
+    #                     self.logs[entry_log_index] = entry
+    #                     self.truncate(entry_log_index + 1)
+    #                 elif current_entry != entry:
+    #                     raise MessageConflict(f"{current_entry} does not equal {entry}")
 
-            for index, entry in enumerate(entries):
-                # Need to add one since enumerate is 0-based list
-                entry_log_index = prev_log_index + index + 1
-                if len(self.logs) < entry_log_index:
-                    self.logs.append(entry)
-                else:
-                    current_entry = self.logs[entry_log_index]
-                    if current_entry.term != entry.term:
-                        self.logs[entry_log_index] = entry
-                        self.truncate(entry_log_index + 1)
+    def append_entries(self, prev_log_index, prev_log_term, entries: List[LogEntry]):
+        if prev_log_index > len(self.logs):
+            raise LogNotCaughtUpException()
+
+        if prev_log_index != 0 and self.logs[prev_log_index].term != prev_log_term:
+            raise TermNotOk(f"Current prev log entry: {self.logs[prev_log_index].term} != {prev_log_term}")
+
+        for idx, entry in enumerate(entries, prev_log_index + 1):
+            if idx < len(self.logs) and self.logs[idx].term != entry.term:
+                # we already have an entry at idx that conflicts
+                self.truncate(idx + 1)
+            elif idx < len(self.logs):
+                continue
+            elif entry != entry:
+                raise MessageConflict(f"{entry} does not equal {entry}")
+
+            self.logs.append(entry)
 
     def append(self, entry):
         self.logs.append(entry)
