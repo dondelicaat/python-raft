@@ -65,7 +65,7 @@ class Raft:
 
             entries = []
             if server_next_idx <= last_log_index:
-                entries = self.log[server_next_idx:]
+                entries = self.log[server_next_idx:].to_list()
 
             self.num_entries_added[server_id] = len(entries)
 
@@ -174,7 +174,7 @@ class Raft:
         self.set_timeout()
 
     def handle_msg(self, msg: Message, client_id):
-        if self.current_term < msg.action.term:
+        if self.current_term < msg.action.term and self.role != 'follower':
             self._set_follower()
             return
 

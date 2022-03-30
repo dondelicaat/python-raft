@@ -15,6 +15,7 @@ def log_fixture():
 
 @pytest.mark.parametrize("prev_log_term,prev_log_index,initial_log,entries,expected",
     [
+        (0, 0, [LogEntry(1)], [LogEntry(1)], [LogEntry(1)]),
         (0, 0, [], [LogEntry(1)], [LogEntry(1)]),
         (0, 0, [], [LogEntry(1), LogEntry(2), LogEntry(2)], [LogEntry(1), LogEntry(2), LogEntry(2)]),
         (2, 2, [LogEntry(1), LogEntry(2)], [LogEntry(3), LogEntry(3), LogEntry(5)],

@@ -8,13 +8,54 @@ from raft.raft_state_machine import Raft
 from raft.rpc_calls import Message
 
 
+def get_log_entries(list):
+    return [LogEntry(item) for item in list]
+
+
 @pytest.mark.parametrize("leader_log_entries,follower_log_entries,expected",
     [
-        # ([LogEntry(1)], [], [LogEntry(1)]),
+        ([LogEntry(1)], [], [LogEntry(1)]),
         ([LogEntry(1), LogEntry(2)], [], [LogEntry(1), LogEntry(2)]),
-        # (0, 0, [], [LogEntry(1), LogEntry(2), LogEntry(2)], [LogEntry(1), LogEntry(2), LogEntry(2)]),
-        # (2, 2, [LogEntry(1), LogEntry(2)], [LogEntry(3), LogEntry(3), LogEntry(5)],
-        # [LogEntry(1), LogEntry(2), LogEntry(3), LogEntry(3), LogEntry(5)]),
+        ([LogEntry(1), LogEntry(2)], [LogEntry(1)], [LogEntry(1), LogEntry(2)]),
+        ([LogEntry(1), LogEntry(2)], [LogEntry(2)], [LogEntry(1), LogEntry(2)]),
+        ([LogEntry(1), LogEntry(2)], [LogEntry(2), LogEntry(3), LogEntry(6)], [LogEntry(1), LogEntry(2)]),
+        (
+            [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4), LogEntry(4), LogEntry(5), LogEntry(5), LogEntry(6), LogEntry(6), LogEntry(6)],
+            [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4), LogEntry(4), LogEntry(5), LogEntry(5), LogEntry(6), LogEntry(6)],
+            [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4), LogEntry(4), LogEntry(5), LogEntry(5), LogEntry(6), LogEntry(6), LogEntry(6)],
+        ),
+        (
+                [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4), LogEntry(4), LogEntry(5),
+                 LogEntry(5), LogEntry(6), LogEntry(6), LogEntry(6)],
+                [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4)],
+                [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4), LogEntry(4), LogEntry(5),
+                 LogEntry(5), LogEntry(6), LogEntry(6), LogEntry(6)],
+        ),
+        (
+                [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4), LogEntry(4), LogEntry(5),
+                 LogEntry(5), LogEntry(6), LogEntry(6), LogEntry(6)],
+                [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4)],
+                [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4), LogEntry(4), LogEntry(5),
+                 LogEntry(5), LogEntry(6), LogEntry(6), LogEntry(6)],
+        ),
+        (
+                [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4), LogEntry(4), LogEntry(5),
+                 LogEntry(5), LogEntry(6), LogEntry(6), LogEntry(6)],
+                [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4), LogEntry(4), LogEntry(5),
+                 LogEntry(5), LogEntry(6), LogEntry(6), LogEntry(6), LogEntry(7), LogEntry(7)],
+                [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4), LogEntry(4), LogEntry(5),
+                 LogEntry(5), LogEntry(6), LogEntry(6), LogEntry(6), LogEntry(7), LogEntry(7)],
+        ),
+        (
+            get_log_entries([1, 1, 1, 4, 4, 5, 5, 6, 6, 6]),
+            get_log_entries([1, 1, 1, 4, 4, 4, 4]),
+            get_log_entries([1, 1, 1, 4, 4, 5, 5, 6, 6, 6]),
+        ),
+        (
+            get_log_entries([1, 1, 1, 4, 4, 5, 5, 6, 6, 6]),
+            get_log_entries([1, 1, 1, 2, 2, 2, 3, 3, 3, 3, 3]),
+            get_log_entries([1, 1, 1, 4, 4, 5, 5, 6, 6, 6]),
+        )
     ]
 )
 def test_replay_leader_log_single_follower(leader_log_entries, follower_log_entries, expected):
@@ -44,10 +85,15 @@ def test_replay_leader_log_single_follower(leader_log_entries, follower_log_entr
 
     while True:
         leader.handle_heartbeat()
-        action, leader_id = leader.outbox.get()
-        follower.handle_msg(Message(action), leader_id)
-        action, client_id = follower.outbox.get()
-        leader.handle_msg(Message(action), client_id)
+        leader_action, leader_id = leader.outbox.get()
+        # No more entries send so logs should be up to date.
 
-    # assert follower.log.logs == expected
+        follower.handle_msg(Message(leader_action), leader_id)
+        follower_action, client_id = follower.outbox.get()
+        leader.handle_msg(Message(follower_action), client_id)
+
+        if len(leader_action.entries) == 0 and follower_action.succes:
+            break
+
+    assert follower.log.logs == expected
 

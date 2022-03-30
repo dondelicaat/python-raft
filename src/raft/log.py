@@ -37,16 +37,18 @@ class OneIndexList(UserList):
                 start = index.start - 1
             if index.stop:
                 stop = index.stop - 1
-            return self.data[slice(start, stop)]
+            return OneIndexList(self.data[slice(start, stop)])
         else:
             return self.data[index - 1]
 
     def __setitem__(self, index, value):
-        print(index)
         self.data[index - 1] = value
 
     def __delitem__(self, index):
         del self.data[index - 1]
+
+    def to_list(self):
+        return self.data
 
     def append(self, value: LogEntry):
         self.data.append(value)
@@ -68,7 +70,7 @@ class Log:
             if idx <= len(self.logs) and self.logs[idx].term != entry.term:
                 # we already have an entry at idx that conflicts
                 self.truncate(idx)
-            elif idx < len(self.logs):
+            elif idx <= len(self.logs):
                 continue
             elif entry != entry:
                 raise MessageConflict(f"{entry} does not equal {entry}")
