@@ -5,6 +5,7 @@ from threading import Thread
 
 from raft.fixed_header_message import FixedHeaderMessageProtocol
 from raft.log import Log
+from raft.metadata_backend import MetadataBackend
 from raft.raft_server import RaftServer
 from raft.raft_state_machine import Raft
 
@@ -20,14 +21,16 @@ class RaftServerController:
         except OSError as e:
             print(f"OSError: {e}")
             raise
-        servers = [('localhost', base_port + idx) for idx in range(num_servers) if idx != server_id]
+        servers = {idx: ('localhost', base_port + idx) for idx in range(num_servers)}
 
         self.inbox = Queue()
         self.outbox = Queue()
         self.raft = Raft(
             servers=servers,
+            server_id=server_id,
             outbox=self.outbox,
-            log=Log(self.log_file)
+            log=Log(self.log_file),
+            metadata_backend=MetadataBackend(file_handle=self.persistent_metadata)
         )
         self.raft_server = RaftServer(
             host=self.host,

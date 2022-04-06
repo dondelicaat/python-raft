@@ -21,7 +21,7 @@ AppendEntriesReply = NamedTuple(
 RequestVoteRequest = NamedTuple(
     "RequestVoteRequest",
     term=int,
-    candidate_id=str,
+    candidate_id=int,
     last_log_index=int,
     last_log_term=int,
 )
@@ -43,8 +43,10 @@ Action = Union[AppendEntriesRequest, RequestVoteRequest, AppendEntriesReply, Req
 
 
 class Message:
-    def __init__(self, action: Action):
+    def __init__(self, action: Action, sender: int, receiver: int):
         self.action = action
+        self.sender = sender
+        self.receiver = receiver
 
     def __bytes__(self):
         return pickle.dumps(self.__dict__)

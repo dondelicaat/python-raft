@@ -32,7 +32,7 @@ def test_timeout(time_difference, initial_role, expected_role, backend_metadata_
     timeout = 150
 
     raft = Raft(
-        servers=[],
+        servers={},
         server_id=0,
         outbox=MagicMock(),
         metadata_backend=backend_metadata_mock,
@@ -85,7 +85,7 @@ def test_votes(number_of_machines, number_of_votes, initial_role, expected_role,
     (5, 3, "candidate", "leader"),
 ])
 def test_votes(number_of_machines, number_of_votes, initial_role, expected_role, backend_metadata_mock):
-    candidate_id = 1
+    candidate_id = 0
     raft = Raft(
         servers=[_ for _ in range(number_of_machines)],
         server_id=candidate_id,
@@ -99,7 +99,7 @@ def test_votes(number_of_machines, number_of_votes, initial_role, expected_role,
     request_vote_reply = RequestVoteReply(0, True)
 
     for i in range(number_of_votes):
-        raft.handle_msg(Message(request_vote_reply), i)
+        raft.handle_msg(Message(request_vote_reply, sender="0", receiver=f"{i}"), i)
 
     assert raft.role == expected_role
 
@@ -111,8 +111,9 @@ def test_start_election(number_of_machines, number_of_votes, initial_role, expec
     shared_queue = Queue()
     candidate_log = Log(log_file=MagicMock())
     candidate_log.logs = OneIndexList(get_log_entries([1]))
+    test_servers = {idx: ("test", "test") for idx in range(number_of_machines)}
     raft_candidate = Raft(
-        servers=[_ for _ in range(number_of_machines)],
+        servers=test_servers,
         server_id=0,
         outbox=shared_queue,
         metadata_backend=backend_metadata_mock,
@@ -123,19 +124,19 @@ def test_start_election(number_of_machines, number_of_votes, initial_role, expec
 
     for server_id in [1, 2, 3, 4]:
         raft_follower = Raft(
-            servers=[_ for _ in range(number_of_machines)],
+            servers=test_servers,
             server_id=server_id,
             outbox=shared_queue,
             metadata_backend=backend_metadata_mock,
             log=MagicMock(),
         )
         raft_follower.role = 'follower'
-        request_vote, client = shared_queue.get()
-        raft_follower.handle_msg(Message(request_vote), client_id=client)
+        request_vote= shared_queue.get()
+        raft_follower.handle_msg(request_vote, client_id=request_vote.sender)
 
     for _ in [1, 2, 3, 4]:
-        request_vote_reply, client = shared_queue.get()
-        raft_candidate.handle_msg(Message(request_vote_reply), client_id=client)
+        request_vote_reply = shared_queue.get()
+        raft_candidate.handle_msg(request_vote_reply, client_id=request_vote_reply.sender)
 
     assert raft_candidate.role == 'leader'
 
@@ -147,9 +148,10 @@ def test_start_election(number_of_machines, number_of_votes, initial_role, expec
     (5, 4, 'leader', 'leader'),
 ])
 def test_handle_append_entries_request(current_term, sender_term, initial_role, expected_role, backend_metadata_mock):
+    test_servers = {idx: ("test", "test") for idx in range(2)}
     raft = Raft(
-        server_id=1,
-        servers=[_ for _ in range(5)],
+        server_id=0,
+        servers=test_servers,
         metadata_backend=backend_metadata_mock,
         outbox=MagicMock(),
         log=MagicMock(),
@@ -165,6 +167,6 @@ def test_handle_append_entries_request(current_term, sender_term, initial_role, 
         leader_commit=1,
         entries=[LogEntry(3)]
     )
-    raft.handle_msg(Message(append_entries_request), client_id=2)
+    raft.handle_msg(Message(append_entries_request, sender=1, receiver=0), client_id=1)
 
     assert raft.role == expected_role

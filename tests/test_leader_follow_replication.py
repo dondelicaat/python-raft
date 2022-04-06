@@ -69,7 +69,7 @@ def backend_metadata_mock():
 )
 def test_replay_leader_log_single_follower(leader_log_entries, follower_log_entries, expected, backend_metadata_mock):
     shared_queue = Queue()
-    test_servers = ["test_server"]
+    test_servers = {1: ("test", "test"), 2: ("test", "test")}
 
     leader_log = Log(log_file=MagicMock())
     leader_log.logs = OneIndexList(leader_log_entries)
@@ -90,20 +90,20 @@ def test_replay_leader_log_single_follower(leader_log_entries, follower_log_entr
         outbox=shared_queue,
         log=follower_log,
         metadata_backend=backend_metadata_mock,
-        server_id=0
+        server_id=2
     )
     follower.current_term = 0
 
     while True:
         leader.handle_heartbeat()
-        leader_action, leader_id = leader.outbox.get()
+        leader_msg = leader.outbox.get()
 
-        follower.handle_msg(Message(leader_action), leader_id)
-        follower_action, client_id = follower.outbox.get()
-        leader.handle_msg(Message(follower_action), client_id)
+        follower.handle_msg(leader_msg, leader_msg.sender)
+        follower_msg = follower.outbox.get()
+        leader.handle_msg(follower_msg, follower_msg.sender)
 
         # No more entries send so and follower success status so log should be replicated.
-        if len(leader_action.entries) == 0 and follower_action.succes:
+        if len(leader_msg.action.entries) == 0 and follower_msg.action.succes:
             break
 
     assert follower.log.logs == expected

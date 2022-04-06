@@ -17,8 +17,8 @@ class Role(Enum):
 class Raft:
     def __init__(
         self,
-        servers,
-        server_id,
+        servers: dict,
+        server_id: int,
         outbox: Queue,
         log: Log,
         metadata_backend: MetadataBackend,
@@ -28,25 +28,24 @@ class Raft:
         self.servers = servers  # List[id, tuple(port, host)] including itself.
         self.server_id = server_id
         self.outbox = outbox
-        self.log = log
         self.leader_id = None
         self.metadata_backend = metadata_backend
-        self._voted_for = None  # todo, some id?
+        self._voted_for = None
         self._current_term = None
-
-        self.request_timeout_ms = 50
-        self.timeout_ms = None
-        self.timeout_provider = timeout_provider
-        self.set_timeout()
 
         self.commit_index = 0
         self.last_applied = 0
 
-        self.next_index = []
-        self.match_index = []
+        self.next_index = {}
+        self.match_index = {}
         self.votes_received = set()
 
+        self.log = log
         self.log.replay()
+
+        self.timeout_ms = None
+        self.timeout_provider = timeout_provider
+        self.set_timeout()
 
     @property
     def voted_for(self):
@@ -80,7 +79,10 @@ class Raft:
             return
 
         last_log_index = len(self.log)
-        for server_id, server in enumerate(self.servers):
+        for server_id, _ in self.servers.items():
+            if server_id == self.server_id:
+                continue
+
             server_next_idx = self.next_index[server_id]
 
             entries = []
@@ -102,12 +104,12 @@ class Raft:
                 prev_log_term=prev_log_term,
                 leader_commit=self.commit_index
             )
-            self.outbox.put((append_entries_request, server_id))
+            self.outbox.put(Message(append_entries_request, sender=self.server_id, receiver=server_id))
 
     def broadcast_election(self):
         assert self.role == 'candidate'
 
-        for server_id, _ in enumerate(self.servers):
+        for server_id, _ in self.servers.items():
             if server_id == self.server_id:
                 continue
 
@@ -117,9 +119,9 @@ class Raft:
                 term=self.current_term, candidate_id=self.server_id,
                 last_log_term=last_log_term, last_log_index=last_log_index
             )
-            self.outbox.put((request_vote_request, server_id))
+            self.outbox.put(Message(request_vote_request, sender=self.server_id, receiver=server_id))
 
-    def handle_append_entries(self, message: AppendEntriesRequest):
+    def handle_append_entries(self, message: AppendEntriesRequest, receiver_id):
         assert self.role == "follower"
         self.set_timeout()
 
@@ -130,25 +132,25 @@ class Raft:
                 entries=message.entries,
             )
         except (TermNotOk, LogNotCaughtUpException):
-            self.outbox.put((AppendEntriesReply(self.current_term, False, -1), self.server_id))
+            self.outbox.put(Message(AppendEntriesReply(self.current_term, False, -1), sender=self.server_id, receiver=receiver_id))
             return
 
         if message.leader_commit > self.commit_index:
             self.commit_index = min(message.leader_commit, len(self.log))
 
         last_log_index = len(self.log)
-        self.outbox.put((AppendEntriesReply(self.current_term, True, last_log_index), self.server_id))
+        self.outbox.put(Message(AppendEntriesReply(self.current_term, True, last_log_index), sender=self.server_id, receiver=receiver_id))
 
-    def handle_request_vote(self, message: RequestVoteRequest):
+    def handle_request_vote(self, message: RequestVoteRequest, receiver_id):
         if (
             self.voted_for is None or self.voted_for == message.candidate_id
             and message.last_log_index >= len(self.log)
         ):  # should term also be the same? # see page 8 4.2.1 last paragraph test message.last_log_index logic as well.
             self.voted_for = message.candidate_id
             self.set_timeout()
-            self.outbox.put((RequestVoteReply(self.current_term, True), self.server_id))
+            self.outbox.put(Message(RequestVoteReply(self.current_term, True), sender=self.server_id, receiver=receiver_id))
 
-        self.outbox.put((RequestVoteReply(self.current_term, False), self.server_id))
+        self.outbox.put(Message(RequestVoteReply(self.current_term, False), sender=self.server_id, receiver=receiver_id))
 
     def handle_request_vote_reply(self, message: RequestVoteReply, client_id):
         if self.role != 'candidate':
@@ -192,8 +194,8 @@ class Raft:
         self.role = "leader"
         self.voted_for = None
         last_log_index = len(self.log)
-        self.next_index = [last_log_index + 1 for _ in self.servers]  # array[indexOfFollower <-> entries]
-        self.match_index = [0 for _ in self.servers]  # array[indexReplicatedFollowers <-> entries]
+        self.next_index = {idx: last_log_index + 1 for idx in self.servers}  # array[indexOfFollower <-> entries]
+        self.match_index = {idx: 0 for idx in self.servers}  # array[indexReplicatedFollowers <-> entries]
         self.set_timeout()
 
     def _set_follower(self):
@@ -215,7 +217,7 @@ class Raft:
                 self.leader_id = msg.action.leader_id
                 self._set_follower()
             else:
-                self.handle_append_entries(msg.action)
+                self.handle_append_entries(msg.action, receiver_id=msg.sender)
 
         elif isinstance(msg.action, AppendEntriesReply):
             self.handle_append_entries_reply(msg.action, client_id)
@@ -223,7 +225,7 @@ class Raft:
         elif isinstance(msg.action, RequestVoteRequest):
             if msg.action.term < self.current_term:
                 return
-            self.handle_request_vote(msg.action)
+            self.handle_request_vote(msg.action, receiver_id=msg.sender)
 
         elif isinstance(msg.action, RequestVoteReply):
             self.handle_request_vote_reply(msg.action, client_id)
