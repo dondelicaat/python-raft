@@ -26,11 +26,10 @@ class Raft:
         outbox: Queue,
         log: Log,
         metadata_backend: MetadataBackend,
-        role="follower",
         timeout_provider=lambda: randint(150, 300),
     ):
-        self.role = role
-        self.servers = servers # List[id, tuple(port, host)] including itself.
+        self.role = 'follower'
+        self.servers = servers  # List[id, tuple(port, host)] including itself.
         self.server_id = server_id
         self.outbox = outbox
         self.log = log
@@ -53,10 +52,6 @@ class Raft:
         self.votes_received = set()
 
         # self.log.replay() # todo: enable
-        if role == "leader":
-            last_log_index = len(self.log)
-            self.next_index = [last_log_index + 1 for _ in servers]  # array[indexOfFollower <-> entries]
-            self.match_index = [0 for _ in servers]  # array[indexReplicatedFollowers <-> entries]
 
     @property
     def voted_for(self):

@@ -78,9 +78,9 @@ def test_replay_leader_log_single_follower(leader_log_entries, follower_log_entr
         outbox=shared_queue,
         log=leader_log,
         metadata_backend=backend_metadata_mock,
-        role="leader",
         server_id=1,
     )
+    leader._set_leader()
     leader.current_term = 1
 
     follower_log = Log(log_file=MagicMock())
@@ -90,7 +90,6 @@ def test_replay_leader_log_single_follower(leader_log_entries, follower_log_entr
         outbox=shared_queue,
         log=follower_log,
         metadata_backend=backend_metadata_mock,
-        role="follower",
         server_id=0
     )
     follower.current_term = 0

@@ -32,7 +32,6 @@ def test_timeout(time_difference, initial_role, expected_role, backend_metadata_
     timeout = 150
 
     raft = Raft(
-        role=initial_role,
         servers=[],
         server_id=0,
         outbox=MagicMock(),
@@ -40,6 +39,11 @@ def test_timeout(time_difference, initial_role, expected_role, backend_metadata_
         timeout_provider=lambda: timeout + time_difference,
         log=MagicMock(),
     )
+
+    if initial_role == 'candidate':
+        raft._set_candidate()
+    elif initial_role == 'leader':
+        raft._set_leader()
 
     for i in range(timeout):
         raft.handle_tick()
