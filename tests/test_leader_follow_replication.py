@@ -95,9 +95,9 @@ def test_replay_leader_log_single_follower(leader_log_entries, follower_log_entr
         leader.handle_heartbeat()
         leader_msg = leader.outbox.get()
 
-        follower.handle_msg(leader_msg, leader_msg.sender)
+        follower.handle_msg(leader_msg)
         follower_msg = follower.outbox.get()
-        leader.handle_msg(follower_msg, follower_msg.sender)
+        leader.handle_msg(follower_msg)
 
         # No more entries send so and follower success status so log should be replicated.
         if len(leader_msg.action.entries) == 0 and follower_msg.action.succes:

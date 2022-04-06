@@ -203,7 +203,7 @@ class Raft:
         self.voted_for = None
         self.set_timeout()
 
-    def handle_msg(self, msg: Message, client_id):
+    def handle_msg(self, msg: Message):
         if self.current_term < msg.action.term and self.role != 'follower':
             self.current_term = msg.action.term
             self._set_follower()
@@ -220,7 +220,7 @@ class Raft:
                 self.handle_append_entries(msg.action, receiver_id=msg.sender)
 
         elif isinstance(msg.action, AppendEntriesReply):
-            self.handle_append_entries_reply(msg.action, client_id)
+            self.handle_append_entries_reply(msg.action, msg.sender)
 
         elif isinstance(msg.action, RequestVoteRequest):
             if msg.action.term < self.current_term:
@@ -228,7 +228,7 @@ class Raft:
             self.handle_request_vote(msg.action, receiver_id=msg.sender)
 
         elif isinstance(msg.action, RequestVoteReply):
-            self.handle_request_vote_reply(msg.action, client_id)
+            self.handle_request_vote_reply(msg.action, client_id=msg.sender)
 
         else:
             raise ValueError(f"Unknown request {msg}")

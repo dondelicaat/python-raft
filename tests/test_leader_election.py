@@ -101,7 +101,7 @@ def test_votes(number_of_machines, number_of_votes, initial_role, expected_role,
     request_vote_reply = RequestVoteReply(0, True)
 
     for i in range(number_of_votes):
-        raft.handle_msg(Message(request_vote_reply, sender=i, receiver=candidate_id), i)
+        raft.handle_msg(Message(request_vote_reply, sender=i, receiver=candidate_id))
 
     assert raft.role == expected_role
 
@@ -133,12 +133,12 @@ def test_start_election(number_of_machines, number_of_votes, initial_role, expec
             log=MagicMock(),
         )
         raft_follower.role = 'follower'
-        request_vote= shared_queue.get()
-        raft_follower.handle_msg(request_vote, client_id=request_vote.sender)
+        request_vote = shared_queue.get()
+        raft_follower.handle_msg(request_vote)
 
     for _ in [1, 2, 3, 4]:
         request_vote_reply = shared_queue.get()
-        raft_candidate.handle_msg(request_vote_reply, client_id=request_vote_reply.sender)
+        raft_candidate.handle_msg(request_vote_reply)
 
     assert raft_candidate.role == 'leader'
 
@@ -169,6 +169,6 @@ def test_handle_append_entries_request(current_term, sender_term, initial_role, 
         leader_commit=1,
         entries=[LogEntry(3)]
     )
-    raft.handle_msg(Message(append_entries_request, sender=1, receiver=0), client_id=1)
+    raft.handle_msg(Message(append_entries_request, sender=1, receiver=0))
 
     assert raft.role == expected_role
