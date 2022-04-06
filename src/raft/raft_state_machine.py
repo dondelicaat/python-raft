@@ -1,8 +1,11 @@
+import logging
+import pickle
 from enum import Enum
 from queue import Queue
 from random import randint
 
 from raft.log import Log, TermNotOk, LogNotCaughtUpException
+from raft.metadata_backend import MetadataBackend
 from raft.rpc_calls import AppendEntriesRequest, AppendEntriesReply, RequestVoteReply, \
     RequestVoteRequest, Message
 
@@ -13,26 +16,30 @@ class Role(Enum):
     LEADER = 3
 
 
+
+
 class Raft:
     def __init__(
         self,
         servers,
+        server_id,
         outbox: Queue,
         log: Log,
+        metadata_backend: MetadataBackend,
         role="follower",
         timeout_provider=lambda: randint(150, 300),
     ):
         self.role = role
-        self.servers = servers
+        self.servers = servers # List[id, tuple(port, host)]
         self.num_servers = len(servers) + 1  # counting for itself.
+        self.server_id = server_id
         self.outbox = outbox
         self.log = log
         self.leader_id = None
-        self.server_id = None
-
+        self.metadata_backend = metadata_backend
         self.votes_received = 0
-        self.voted_for = None  # todo, some id?
-        self.current_term = 0  # Fetch from persisted state
+        self._voted_for = None  # todo, some id?
+        self._current_term = None
 
         self.request_timeout_ms = 50
         self.timeout_ms = None
@@ -46,11 +53,35 @@ class Raft:
         self.match_index = []
         self.num_entries_added = [0 for _ in servers]
 
-        # self.log.replay()
+        # self.log.replay() # todo: enable
         if role == "leader":
             last_log_index = len(self.log)
             self.next_index = [last_log_index + 1 for _ in servers]  # array[indexOfFollower <-> entries]
             self.match_index = [0 for _ in servers]  # array[indexReplicatedFollowers <-> entries]
+
+    @property
+    def voted_for(self):
+        if self._voted_for is None:
+            state = self.metadata_backend.read()
+            self._voted_for = state['voted_for']
+        return self._voted_for
+
+    @voted_for.setter
+    def voted_for(self, value):
+        self.metadata_backend.write({'voted_for': value, 'current_term': self._current_term})
+        self._voted_for = value
+
+    @property
+    def current_term(self):
+        if self._current_term is None:
+            state = self.metadata_backend.read()
+            self._current_term = state['current_term']
+        return self._current_term
+
+    @current_term.setter
+    def current_term(self, value):
+        self.metadata_backend.write({'voted_for': self._voted_for, 'current_term': value})
+        self._current_term = value
 
     def set_timeout(self):
         self.timeout_ms = self.timeout_provider()
@@ -96,15 +127,14 @@ class Raft:
                 prev_log_term=message.prev_log_term,
                 entries=message.entries,
             )
-
-            if message.leader_commit > self.commit_index:
-                self.commit_index = min(message.leader_commit, len(self.log))
-            success = True
-
         except (TermNotOk, LogNotCaughtUpException):
-            success = False
+            self.outbox.put((AppendEntriesReply(self.current_term, False), self.server_id))
+            return
 
-        self.outbox.put((AppendEntriesReply(self.current_term, success), self.server_id))
+        if message.leader_commit > self.commit_index:
+            self.commit_index = min(message.leader_commit, len(self.log))
+
+        self.outbox.put((AppendEntriesReply(self.current_term, True), self.server_id))
 
     def handle_request_vote(self, message: RequestVoteRequest) -> RequestVoteReply:
         if (
@@ -124,7 +154,7 @@ class Raft:
         if not message.succes:
             self.next_index[server_id] -= 1
         else:
-            self.next_index[server_id] += self.num_entries_added[server_id]
+            self.next_index[server_id] += self.num_entries_added[server_id]  #todo: make follower reply with its position in the log.
             self.match_index[server_id] += self.num_entries_added[server_id]
 
     def handle_tick(self):
@@ -154,7 +184,7 @@ class Raft:
         self.role = "candidate"
         self.votes_received = 1
         self.current_term += 1
-        self.voted_for = None  # Todo: set to self.id
+        self.voted_for = self.server_id
         # todo: self.broadcast_election()
         self.set_timeout()
 
@@ -177,6 +207,7 @@ class Raft:
         if self.current_term < msg.action.term and self.role != 'follower':
             self._set_follower()
             return
+
 
         if isinstance(msg.action, AppendEntriesRequest):
             if self.role != 'follower':

@@ -10,12 +10,13 @@ from raft.raft_state_machine import Raft
 
 
 class RaftServerController:
-    def __init__(self, server_id: int, num_servers: int):
+    def __init__(self, server_id: int, num_servers: int):  #  pass file handles to raft_server_controller
         base_port = 9090
         self.host = 'localhost'
         self.port = base_port + server_id
         try:
             self.log_file = open(f"/tmp/data_{server_id}.log", 'w+')
+            self.persistent_metadata = open(f"/tmp/metadata_{server_id}", 'wb+')
         except OSError as e:
             print(f"OSError: {e}")
             raise

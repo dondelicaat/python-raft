@@ -2,8 +2,17 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from raft.raft_state_machine import RoleStateMachine
-from raft.rpc_calls import AppendEntriesRequest
+from raft.log import LogEntry
+from raft.raft_state_machine import Raft
+from raft.rpc_calls import AppendEntriesRequest, Message
+
+
+@pytest.fixture
+def backend_metadata_mock():
+    backend = MagicMock()
+    # Since only called on startup we can simply mock it here.
+    backend.read.return_value = {'voted_for': None, 'current_term': 0}
+    return backend
 
 
 @pytest.mark.parametrize("time_difference,initial_role,expected_role", [
@@ -17,20 +26,23 @@ from raft.rpc_calls import AppendEntriesRequest
     (0, "leader", "leader"),
     (1, "leader", "leader"),
 ])
-def test_timeout(time_difference, initial_role, expected_role):
+def test_timeout(time_difference, initial_role, expected_role, backend_metadata_mock):
     timeout = 150
-    machine = RoleStateMachine(
+
+    raft = Raft(
         role=initial_role,
-        number_of_machines=1,
+        servers=[],
+        server_id=0,
         outbox=MagicMock(),
+        metadata_backend=backend_metadata_mock,
         timeout_provider=lambda: timeout + time_difference,
         log=MagicMock(),
     )
 
     for i in range(timeout):
-        machine.handle_tick()
+        raft.handle_tick()
 
-    assert machine.role == expected_role
+    assert raft.role == expected_role
 
 
 @pytest.mark.parametrize("number_of_machines,number_of_votes,initial_role,expected_role", [
@@ -39,11 +51,13 @@ def test_timeout(time_difference, initial_role, expected_role):
     (5, 2, "candidate", "candidate"),
     (5, 3, "candidate", "leader"),
 ])
-def test_votes(number_of_machines, number_of_votes, initial_role, expected_role):
-    machine = RoleStateMachine(
+def test_votes(number_of_machines, number_of_votes, initial_role, expected_role, backend_metadata_mock):
+    machine = Raft(
         role=initial_role,
-        number_of_machines=number_of_machines,
+        servers=[_ for _ in range(number_of_machines)],
+        server_id=0,
         outbox=MagicMock(),
+        metadata_backend=backend_metadata_mock,
         log=MagicMock(),
     )
 
@@ -53,27 +67,31 @@ def test_votes(number_of_machines, number_of_votes, initial_role, expected_role)
     assert machine.role == expected_role
 
 
-@pytest.mark.parametrize("current_term,message_term,initial_role,expected_role", [
+@pytest.mark.parametrize("current_term,sender_term,initial_role,expected_role", [
     (0, 0, "follower", "follower"),
     (5, 6, "candidate", "follower"),
     (5, 6, "leader", "follower"),
+    (5, 4, 'leader', 'leader'),
 ])
-def test_new_leader_detected(current_term, message_term, initial_role, expected_role):
-    machine = RoleStateMachine(
-        role=initial_role,
-        number_of_machines=5,
-        current_term=current_term,
+def test_handle_append_entries_request(current_term, sender_term, initial_role, expected_role, backend_metadata_mock):
+    raft = Raft(
+        server_id=1,
+        servers=[_ for _ in range(5)],
+        metadata_backend=backend_metadata_mock,
         outbox=MagicMock(),
         log=MagicMock(),
     )
+    raft.role = initial_role
+    raft.current_term = current_term
 
-    msg = AppendEntriesRequest(
-        term=message_term,
+    append_entries_request = AppendEntriesRequest(
+        term=sender_term,
         leader_id="testleader",
         prev_log_index=123,
-        leader_commit="hshshs",
-        entries=["set", "get", "delete"]
+        prev_log_term=2,
+        leader_commit=1,
+        entries=[LogEntry(3)]
     )
-    machine.handle_append_entries(msg)
+    raft.handle_msg(Message(append_entries_request), client_id=2)
 
-    assert machine.role == expected_role
+    assert raft.role == expected_role

@@ -12,6 +12,15 @@ def get_log_entries(list):
     return [LogEntry(item) for item in list]
 
 
+@pytest.fixture
+def backend_metadata_mock():
+    backend = MagicMock()
+    # Since only called on startup we can simply mock it here.
+    backend.read.return_value = {'voted_for': None, 'current_term': 0}
+    return backend
+
+
+
 @pytest.mark.parametrize("leader_log_entries,follower_log_entries,expected",
     [
         ([LogEntry(1)], [], [LogEntry(1)]),
@@ -58,7 +67,7 @@ def get_log_entries(list):
         )
     ]
 )
-def test_replay_leader_log_single_follower(leader_log_entries, follower_log_entries, expected):
+def test_replay_leader_log_single_follower(leader_log_entries, follower_log_entries, expected, backend_metadata_mock):
     shared_queue = Queue()
     test_servers = ["test_server"]
 
@@ -68,7 +77,9 @@ def test_replay_leader_log_single_follower(leader_log_entries, follower_log_entr
         servers=test_servers,
         outbox=shared_queue,
         log=leader_log,
+        metadata_backend=backend_metadata_mock,
         role="leader",
+        server_id=1,
     )
     leader.current_term = 1
 
@@ -78,20 +89,21 @@ def test_replay_leader_log_single_follower(leader_log_entries, follower_log_entr
         servers=test_servers,
         outbox=shared_queue,
         log=follower_log,
+        metadata_backend=backend_metadata_mock,
         role="follower",
+        server_id=0
     )
     follower.current_term = 0
-    follower.server_id = 0
 
     while True:
         leader.handle_heartbeat()
         leader_action, leader_id = leader.outbox.get()
-        # No more entries send so logs should be up to date.
 
         follower.handle_msg(Message(leader_action), leader_id)
         follower_action, client_id = follower.outbox.get()
         leader.handle_msg(Message(follower_action), client_id)
 
+        # No more entries send so and follower success status so log should be replicated.
         if len(leader_action.entries) == 0 and follower_action.succes:
             break
 
