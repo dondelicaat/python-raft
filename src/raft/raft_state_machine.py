@@ -205,12 +205,12 @@ class Raft:
 
     def handle_msg(self, msg: Message, client_id):
         if self.current_term < msg.action.term and self.role != 'follower':
+            self.current_term = msg.action.term
             self._set_follower()
             return
 
-
         if isinstance(msg.action, AppendEntriesRequest):
-            if self.role != 'follower':
+            if self.role != 'follower' and msg.action.term < self.current_term:
                 self.current_term = msg.action.term
                 self.leader_id = msg.action.leader_id
                 self._set_follower()
@@ -221,6 +221,8 @@ class Raft:
             self.handle_append_entries_reply(msg.action, client_id)
 
         elif isinstance(msg.action, RequestVoteRequest):
+            if msg.action.term < self.current_term:
+                return
             self.handle_request_vote(msg.action)
 
         elif isinstance(msg.action, RequestVoteReply):

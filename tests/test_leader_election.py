@@ -52,7 +52,7 @@ def test_timeout(time_difference, initial_role, expected_role, backend_metadata_
     (5, 3, "candidate", "leader"),
 ])
 def test_votes(number_of_machines, number_of_votes, initial_role, expected_role, backend_metadata_mock):
-    machine = Raft(
+    raft = Raft(
         role=initial_role,
         servers=[_ for _ in range(number_of_machines)],
         server_id=0,
@@ -61,10 +61,12 @@ def test_votes(number_of_machines, number_of_votes, initial_role, expected_role,
         log=MagicMock(),
     )
 
-    for i in range(number_of_votes):
-        machine.handle_vote()
+    # raft.
 
-    assert machine.role == expected_role
+    for i in range(number_of_votes):
+        raft.handle_vote()
+
+    assert raft.role == expected_role
 
 
 @pytest.mark.parametrize("current_term,sender_term,initial_role,expected_role", [
