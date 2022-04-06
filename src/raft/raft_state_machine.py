@@ -1,5 +1,3 @@
-import logging
-import pickle
 from enum import Enum
 from queue import Queue
 from random import randint
@@ -14,8 +12,6 @@ class Role(Enum):
     FOLLOWER = 1
     CANDIDATE = 2
     LEADER = 3
-
-
 
 
 class Raft:
@@ -51,7 +47,7 @@ class Raft:
         self.num_entries_added = [0 for _ in servers]
         self.votes_received = set()
 
-        # self.log.replay() # todo: enable
+        self.log.replay()
 
     @property
     def voted_for(self):
