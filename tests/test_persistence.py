@@ -10,7 +10,7 @@ def test_persistence():
         metadata_backend = MetadataBackend(tmp)
 
         raft = Raft(
-            servers=[],
+            servers={},
             server_id=0,
             outbox=MagicMock(),
             metadata_backend=metadata_backend,
@@ -18,7 +18,7 @@ def test_persistence():
         )
 
         raft2 = Raft(
-            servers=[],
+            servers={},
             server_id=0,
             outbox=MagicMock(),
             metadata_backend=metadata_backend,

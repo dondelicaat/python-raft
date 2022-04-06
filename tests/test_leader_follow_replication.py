@@ -5,8 +5,6 @@ from unittest.mock import MagicMock
 
 from raft.log import Log, OneIndexList, LogEntry
 from raft.raft_state_machine import Raft
-from raft.rpc_calls import Message
-
 
 def get_log_entries(list):
     return [LogEntry(item) for item in list]
@@ -18,7 +16,6 @@ def backend_metadata_mock():
     # Since only called on startup we can simply mock it here.
     backend.read.return_value = {'voted_for': None, 'current_term': 0}
     return backend
-
 
 
 @pytest.mark.parametrize("leader_log_entries,follower_log_entries,expected",

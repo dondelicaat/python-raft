@@ -59,8 +59,9 @@ def test_timeout(time_difference, initial_role, expected_role, backend_metadata_
 ])
 def test_votes(number_of_machines, number_of_votes, initial_role, expected_role, backend_metadata_mock):
     candidate_id = 1
+    test_servers = {idx: ("test", "test") for idx in range(number_of_machines)}
     raft = Raft(
-        servers=[_ for _ in range(number_of_machines)],
+        servers=test_servers,
         server_id=candidate_id,
         outbox=MagicMock(),
         metadata_backend=backend_metadata_mock,
@@ -72,7 +73,7 @@ def test_votes(number_of_machines, number_of_votes, initial_role, expected_role,
     request_vote_reply = RequestVoteReply(0, True)
 
     for i in range(number_of_votes):
-        raft.handle_msg(Message(request_vote_reply), i)
+        raft.handle_msg(Message(request_vote_reply, sender=i, receiver=candidate_id), 1)
 
     assert raft.role == expected_role
 
@@ -86,8 +87,9 @@ def test_votes(number_of_machines, number_of_votes, initial_role, expected_role,
 ])
 def test_votes(number_of_machines, number_of_votes, initial_role, expected_role, backend_metadata_mock):
     candidate_id = 0
+    test_servers = {idx: ("test", "test") for idx in range(number_of_machines)}
     raft = Raft(
-        servers=[_ for _ in range(number_of_machines)],
+        servers=test_servers,
         server_id=candidate_id,
         outbox=MagicMock(),
         metadata_backend=backend_metadata_mock,
@@ -99,7 +101,7 @@ def test_votes(number_of_machines, number_of_votes, initial_role, expected_role,
     request_vote_reply = RequestVoteReply(0, True)
 
     for i in range(number_of_votes):
-        raft.handle_msg(Message(request_vote_reply, sender="0", receiver=f"{i}"), i)
+        raft.handle_msg(Message(request_vote_reply, sender=i, receiver=candidate_id), i)
 
     assert raft.role == expected_role
 
