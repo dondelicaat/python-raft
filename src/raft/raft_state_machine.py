@@ -44,7 +44,6 @@ class Raft:
 
         self.next_index = []
         self.match_index = []
-        self.num_entries_added = [0 for _ in servers]
         self.votes_received = set()
 
         self.log.replay()
@@ -87,8 +86,6 @@ class Raft:
             entries = []
             if server_next_idx <= last_log_index:
                 entries = self.log[server_next_idx:].to_list()
-
-            self.num_entries_added[server_id] = len(entries)
 
             if server_next_idx != 0:
                 prev_log_index = server_next_idx - 1
@@ -133,19 +130,20 @@ class Raft:
                 entries=message.entries,
             )
         except (TermNotOk, LogNotCaughtUpException):
-            self.outbox.put((AppendEntriesReply(self.current_term, False), self.server_id))
+            self.outbox.put((AppendEntriesReply(self.current_term, False, -1), self.server_id))
             return
 
         if message.leader_commit > self.commit_index:
             self.commit_index = min(message.leader_commit, len(self.log))
 
-        self.outbox.put((AppendEntriesReply(self.current_term, True), self.server_id))
+        last_log_index = len(self.log)
+        self.outbox.put((AppendEntriesReply(self.current_term, True, last_log_index), self.server_id))
 
     def handle_request_vote(self, message: RequestVoteRequest):
         if (
             self.voted_for is None or self.voted_for == message.candidate_id
             and message.last_log_index >= len(self.log)
-        ):  # should term also be the same? # see page 8 4.2.1 last paragraph
+        ):  # should term also be the same? # see page 8 4.2.1 last paragraph test message.last_log_index logic as well.
             self.voted_for = message.candidate_id
             self.set_timeout()
             self.outbox.put((RequestVoteReply(self.current_term, True), self.server_id))
@@ -166,8 +164,8 @@ class Raft:
         if not message.succes:
             self.next_index[server_id] -= 1
         else:
-            self.next_index[server_id] += self.num_entries_added[server_id]  #todo: make follower reply with its position in the log.
-            self.match_index[server_id] += self.num_entries_added[server_id]
+            self.next_index[server_id] = message.last_log_index + 1
+            self.match_index[server_id] = message.last_log_index + 1
 
     def handle_tick(self):
         self.timeout_ms -= 1

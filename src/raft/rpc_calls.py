@@ -16,6 +16,7 @@ AppendEntriesReply = NamedTuple(
     "AppendEntriesReply",
     term=int,
     succes=bool,
+    last_log_index=int,
 )
 RequestVoteRequest = NamedTuple(
     "RequestVoteRequest",
