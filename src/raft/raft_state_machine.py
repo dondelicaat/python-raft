@@ -172,14 +172,33 @@ class Raft:
         self.commit()
 
     def commit(self):
-        self.match_index # <- dict(server_id: index) (1: 2, 2: 5, 3: 4) <- 4
-        # get largest majority match index
-        # for idx in range(self.commit_index, largest_majority_index)
-        #      if log[idx].term == current_term
-        #          new_commit_index = idx
-        # self.commit_index = new_commit_index
-
-        if len(self.votes_received) / len(self.servers) > 0.5:
+        # # self.match_index # <- dict(server_id: index) (1: 2, 2: 5, 3: 4) <- 4
+        # max_majority_index = -1
+        # largest = 0
+        # # sort and take middle
+        # for server_id, index in self.match_index.items():
+        #     largest = max(self.match_index, key=self.match_index.get)
+        #     count = 1 # itself
+        #     for server_id, index in self.match_index.items():
+        #         if index == largest:
+        #             count += 1
+        #
+        #     if count / len(self.servers) > 0.5:
+        #         max_majority_index = largest
+        #
+        #
+        #
+        #
+        #     pass
+        #
+        # # get largest majority match index
+        # # for idx in range(self.commit_index, largest_majority_index)
+        # #      if log[idx].term == current_term
+        # #          new_commit_index = idx
+        # # self.commit_index = new_commit_index
+        #
+        # if len(self.votes_received) / len(self.servers) > 0.5:
+        #     pass
 
     def handle_tick(self):
         self.timeout_ms -= 1
