@@ -4,7 +4,7 @@ import pytest
 
 from raft.log import LogEntry
 from raft.raft_state_machine import Raft
-from raft.rpc_calls import AppendEntriesRequest, Message
+from raft.rpc_calls import AppendEntriesRequest, Message, RequestVoteReply
 
 
 @pytest.fixture
@@ -52,19 +52,22 @@ def test_timeout(time_difference, initial_role, expected_role, backend_metadata_
     (5, 3, "candidate", "leader"),
 ])
 def test_votes(number_of_machines, number_of_votes, initial_role, expected_role, backend_metadata_mock):
+    candidate_id = 1
     raft = Raft(
-        role=initial_role,
         servers=[_ for _ in range(number_of_machines)],
-        server_id=0,
+        server_id=candidate_id,
         outbox=MagicMock(),
         metadata_backend=backend_metadata_mock,
         log=MagicMock(),
     )
-
-    # raft.
+    raft.role = initial_role
+    raft.current_term = 1
+    raft.voted_for = candidate_id
+    request_vote_reply = RequestVoteReply(0, True)
 
     for i in range(number_of_votes):
-        raft.handle_vote()
+        raft.handle_msg(Message(request_vote_reply), i)
+
 
     assert raft.role == expected_role
 

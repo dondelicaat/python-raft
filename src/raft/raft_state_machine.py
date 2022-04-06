@@ -30,8 +30,7 @@ class Raft:
         timeout_provider=lambda: randint(150, 300),
     ):
         self.role = role
-        self.servers = servers # List[id, tuple(port, host)]
-        self.num_servers = len(servers) + 1  # counting for itself.
+        self.servers = servers # List[id, tuple(port, host)] including itself.
         self.server_id = server_id
         self.outbox = outbox
         self.log = log
@@ -52,6 +51,7 @@ class Raft:
         self.next_index = []
         self.match_index = []
         self.num_entries_added = [0 for _ in servers]
+        self.votes_received = set()
 
         # self.log.replay() # todo: enable
         if role == "leader":
@@ -147,8 +147,15 @@ class Raft:
 
         return RequestVoteReply(self.current_term, False)
 
-    def handle_request_vote_reply(self, message: RequestVoteReply):
-        raise NotImplemented()
+    def handle_request_vote_reply(self, message: RequestVoteReply, client_id):
+        if self.role != 'candidate':
+            return
+
+        if message.vote_granted:
+            self.votes_received.add(client_id)
+
+        if len(self.votes_received) / len(self.servers) > 0.5:
+            self._set_leader()
 
     def handle_append_entries_reply(self, message: AppendEntriesReply, server_id):
         if not message.succes:
@@ -170,15 +177,6 @@ class Raft:
             self._set_candidate()
         elif self.role == "leader":
             self.set_timeout()
-
-    def handle_vote(self):
-        self.votes_received += 1
-        # Turn into a set of votes => handles idempotent votes.
-        if self.received_majority_vote() and self.role == "candidate":
-            self._set_leader()
-
-    def received_majority_vote(self):
-        return self.votes_received / self.num_servers > 0.5
 
     def _set_candidate(self):
         self.role = "candidate"
@@ -210,7 +208,9 @@ class Raft:
             return
 
         if isinstance(msg.action, AppendEntriesRequest):
-            if self.role != 'follower' and msg.action.term < self.current_term:
+            if msg.action.term < self.current_term:
+                return
+            elif self.role != 'follower':
                 self.current_term = msg.action.term
                 self.leader_id = msg.action.leader_id
                 self._set_follower()
@@ -226,7 +226,7 @@ class Raft:
             self.handle_request_vote(msg.action)
 
         elif isinstance(msg.action, RequestVoteReply):
-            self.handle_request_vote_reply(msg.action)
+            self.handle_request_vote_reply(msg.action, client_id)
 
         else:
             raise ValueError(f"Unknown request {msg}")
