@@ -1,10 +1,12 @@
+from queue import Queue
 from unittest.mock import MagicMock
 
 import pytest
 
-from raft.log import LogEntry
+from raft.log import LogEntry, Log, OneIndexList
 from raft.raft_state_machine import Raft
 from raft.rpc_calls import AppendEntriesRequest, Message, RequestVoteReply
+from tests.test_leader_follow_replication import get_log_entries
 
 
 @pytest.fixture
@@ -68,8 +70,70 @@ def test_votes(number_of_machines, number_of_votes, initial_role, expected_role,
     for i in range(number_of_votes):
         raft.handle_msg(Message(request_vote_reply), i)
 
+    assert raft.role == expected_role
+
+
+
+@pytest.mark.parametrize("number_of_machines,number_of_votes,initial_role,expected_role", [
+    (5, 1, "follower", "follower"),
+    (5, 3, "follower", "follower"),
+    (5, 2, "candidate", "candidate"),
+    (5, 3, "candidate", "leader"),
+])
+def test_votes(number_of_machines, number_of_votes, initial_role, expected_role, backend_metadata_mock):
+    candidate_id = 1
+    raft = Raft(
+        servers=[_ for _ in range(number_of_machines)],
+        server_id=candidate_id,
+        outbox=MagicMock(),
+        metadata_backend=backend_metadata_mock,
+        log=MagicMock(),
+    )
+    raft.role = initial_role
+    raft.current_term = 1
+    raft.voted_for = candidate_id
+    request_vote_reply = RequestVoteReply(0, True)
+
+    for i in range(number_of_votes):
+        raft.handle_msg(Message(request_vote_reply), i)
 
     assert raft.role == expected_role
+
+
+@pytest.mark.parametrize("number_of_machines,number_of_votes,initial_role,expected_role", [
+    (5, 1, "follower", "follower"),
+])
+def test_start_election(number_of_machines, number_of_votes, initial_role, expected_role, backend_metadata_mock):
+    shared_queue = Queue()
+    candidate_log = Log(log_file=MagicMock())
+    candidate_log.logs = OneIndexList(get_log_entries([1]))
+    raft_candidate = Raft(
+        servers=[_ for _ in range(number_of_machines)],
+        server_id=0,
+        outbox=shared_queue,
+        metadata_backend=backend_metadata_mock,
+        log=candidate_log,
+    )
+    raft_candidate.current_term = 1
+    raft_candidate._set_candidate()
+
+    for server_id in [1, 2, 3, 4]:
+        raft_follower = Raft(
+            servers=[_ for _ in range(number_of_machines)],
+            server_id=server_id,
+            outbox=shared_queue,
+            metadata_backend=backend_metadata_mock,
+            log=MagicMock(),
+        )
+        raft_follower.role = 'follower'
+        request_vote, client = shared_queue.get()
+        raft_follower.handle_msg(Message(request_vote), client_id=client)
+
+    for _ in [1, 2, 3, 4]:
+        request_vote_reply, client = shared_queue.get()
+        raft_candidate.handle_msg(Message(request_vote_reply), client_id=client)
+
+    assert raft_candidate.role == 'leader'
 
 
 @pytest.mark.parametrize("current_term,sender_term,initial_role,expected_role", [

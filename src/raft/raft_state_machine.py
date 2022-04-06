@@ -36,7 +36,6 @@ class Raft:
         self.log = log
         self.leader_id = None
         self.metadata_backend = metadata_backend
-        self.votes_received = 0
         self._voted_for = None  # todo, some id?
         self._current_term = None
 
@@ -115,7 +114,22 @@ class Raft:
                 prev_log_term=prev_log_term,
                 leader_commit=self.commit_index
             )
-            self.outbox.put((append_entries_request, self.leader_id))
+            self.outbox.put((append_entries_request, server_id))
+
+    def broadcast_election(self):
+        assert self.role == 'candidate'
+
+        for server_id, _ in enumerate(self.servers):
+            if server_id == self.server_id:
+                continue
+
+            last_log_index = len(self.log)
+            last_log_term = self.log[last_log_index]
+            request_vote_request = RequestVoteRequest(
+                term=self.current_term, candidate_id=self.server_id,
+                last_log_term=last_log_term, last_log_index=last_log_index
+            )
+            self.outbox.put((request_vote_request, server_id))
 
     def handle_append_entries(self, message: AppendEntriesRequest):
         assert self.role == "follower"
@@ -136,16 +150,16 @@ class Raft:
 
         self.outbox.put((AppendEntriesReply(self.current_term, True), self.server_id))
 
-    def handle_request_vote(self, message: RequestVoteRequest) -> RequestVoteReply:
+    def handle_request_vote(self, message: RequestVoteRequest):
         if (
             self.voted_for is None or self.voted_for == message.candidate_id
             and message.last_log_index >= len(self.log)
         ):  # should term also be the same? # see page 8 4.2.1 last paragraph
             self.voted_for = message.candidate_id
             self.set_timeout()
-            return RequestVoteReply(self.current_term, True)
+            self.outbox.put((RequestVoteReply(self.current_term, True), self.server_id))
 
-        return RequestVoteReply(self.current_term, False)
+        self.outbox.put((RequestVoteReply(self.current_term, False), self.server_id))
 
     def handle_request_vote_reply(self, message: RequestVoteReply, client_id):
         if self.role != 'candidate':
@@ -173,22 +187,20 @@ class Raft:
         if self.role == "follower":
             self._set_candidate()
         if self.role == "candidate":
-            # if num_pc - no_response = majjority and timeout
             self._set_candidate()
-        elif self.role == "leader":
+        elif self.role == "leader":  # todo: shouldn't happen
             self.set_timeout()
 
     def _set_candidate(self):
         self.role = "candidate"
-        self.votes_received = 1
         self.current_term += 1
         self.voted_for = self.server_id
-        # todo: self.broadcast_election()
+        self.votes_received.add(self.server_id)
         self.set_timeout()
+        self.broadcast_election()
 
     def _set_leader(self):
         self.role = "leader"
-        self.votes_received = 0
         self.voted_for = None
         last_log_index = len(self.log)
         self.next_index = [last_log_index + 1 for _ in self.servers]  # array[indexOfFollower <-> entries]
@@ -197,7 +209,6 @@ class Raft:
 
     def _set_follower(self):
         self.role = "follower"
-        self.votes_received = 0
         self.voted_for = None
         self.set_timeout()
 
