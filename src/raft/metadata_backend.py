@@ -11,6 +11,7 @@ class MetadataBackend:
         except EOFError:
             logging.info("File is empty so initialize to default settings and persist.")
             self.state = {'voted_for': None, 'current_term': 0}
+            # Write here so we don't have to deal with EOFError in self.read()
             self.write(self.state)
         else:
             self.state = state

@@ -143,7 +143,7 @@ class Raft:
 
     def handle_request_vote(self, message: RequestVoteRequest, receiver_id):
         if (
-            self.voted_for is None or self.voted_for == message.candidate_id
+            (self.voted_for is None or self.voted_for == message.candidate_id)
             and message.last_log_index >= len(self.log)
         ):  # should term also be the same? # see page 8 4.2.1 last paragraph test message.last_log_index logic as well.
             self.voted_for = message.candidate_id
@@ -194,8 +194,8 @@ class Raft:
         self.role = "leader"
         self.voted_for = None
         last_log_index = len(self.log)
-        self.next_index = {idx: last_log_index + 1 for idx in self.servers}  # array[indexOfFollower <-> entries]
-        self.match_index = {idx: 0 for idx in self.servers}  # array[indexReplicatedFollowers <-> entries]
+        self.next_index = {idx: last_log_index + 1 for idx in self.servers}
+        self.match_index = {idx: 0 for idx in self.servers}
         self.set_timeout()
 
     def _set_follower(self):

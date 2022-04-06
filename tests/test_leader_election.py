@@ -5,7 +5,7 @@ import pytest
 
 from raft.log import LogEntry, Log, OneIndexList
 from raft.raft_state_machine import Raft
-from raft.rpc_calls import AppendEntriesRequest, Message, RequestVoteReply
+from raft.rpc_calls import AppendEntriesRequest, Message, RequestVoteReply, RequestVoteRequest
 from tests.test_leader_follow_replication import get_log_entries
 
 
@@ -163,7 +163,7 @@ def test_handle_append_entries_request(current_term, sender_term, initial_role, 
 
     append_entries_request = AppendEntriesRequest(
         term=sender_term,
-        leader_id="testleader",
+        leader_id=1,
         prev_log_index=123,
         prev_log_term=2,
         leader_commit=1,
@@ -172,3 +172,41 @@ def test_handle_append_entries_request(current_term, sender_term, initial_role, 
     raft.handle_msg(Message(append_entries_request, sender=1, receiver=0))
 
     assert raft.role == expected_role
+
+
+@pytest.mark.parametrize("follower_log_entries,follower_term,follower_voted_for,candidate_term,candidate_last_log_index,candidate_last_log_term,expected",
+    [
+        ([LogEntry(1)], None, 1, 1, 1, 1, True),
+        ([LogEntry(1)], 1, 1, 1, 1, 1, True),
+        ([LogEntry(1)], 1, 2, 1, 1, 1, False),
+        ([LogEntry(1), LogEntry(1)], 1, 1, 1, 2, 1, True),  # candidate.last_log_indedx == len(follower.logs)
+        ([LogEntry(1), LogEntry(1), LogEntry(1)], 1, 1, 1, 2, 1, False), # candidate.last_log_indedx < len(follower.logs)
+    ]
+)
+def test_granting_vote(follower_log_entries, follower_term, follower_voted_for, candidate_term,
+                       candidate_last_log_index, candidate_last_log_term, expected,
+                       backend_metadata_mock):
+    test_servers = {idx: ("test", "test") for idx in range(2)}
+    follower_log = Log(log_file=MagicMock())
+    follower_log.logs = OneIndexList(follower_log_entries)
+    shared_queue = Queue()
+    raft_follower = Raft(
+        server_id=0,
+        servers=test_servers,
+        metadata_backend=backend_metadata_mock,
+        outbox=shared_queue,
+        log=follower_log,
+    )
+    raft_follower.voted_for = follower_voted_for
+
+    request_vote_request = RequestVoteRequest(
+        candidate_id=1, last_log_index=candidate_last_log_index,
+        last_log_term=candidate_last_log_term, term=candidate_term
+    )
+
+    raft_follower.handle_msg(Message(request_vote_request, sender=1, receiver=0))
+
+    msg = shared_queue.get()
+    assert msg.action.vote_granted == expected
+
+

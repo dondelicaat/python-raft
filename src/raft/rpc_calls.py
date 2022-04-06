@@ -6,7 +6,7 @@ from raft.log import LogEntry
 AppendEntriesRequest = NamedTuple(
     "AppendEntriesRequest",
     term=int,
-    leader_id=str,
+    leader_id=int,
     prev_log_index=int,
     prev_log_term=int,
     entries=List[LogEntry],
