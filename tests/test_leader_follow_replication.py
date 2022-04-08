@@ -79,6 +79,7 @@ def test_replay_leader_log_single_follower(leader_log_entries, follower_log_entr
     )
     leader._set_leader()
     leader.current_term = 1
+    leader.commit = MagicMock()
 
     follower_log = Log(log_file=MagicMock())
     follower_log.logs = OneIndexList(follower_log_entries)

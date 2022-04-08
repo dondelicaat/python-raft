@@ -23,6 +23,8 @@ class RaftServerController:
             raise
         servers = {idx: ('localhost', base_port + idx) for idx in range(num_servers)}
 
+        assert len(servers) > 2 and len(servers) % 2 == 1
+
         self.inbox = Queue()
         self.outbox = Queue()
         self.raft = Raft(

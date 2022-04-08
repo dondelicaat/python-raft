@@ -70,3 +70,16 @@ def test_log_not_caught_up(log_fixture, prev_log_term, prev_log_index, initial_l
     with pytest.raises(LogNotCaughtUpException):
         log_fixture.append_entries(prev_log_term=prev_log_term, prev_log_index=prev_log_index,
                                    entries=entries)
+
+
+@pytest.mark.parametrize("log,index,expected_entries",
+[
+    ([LogEntry(1), LogEntry(4)], 2, LogEntry(4)),
+    ([LogEntry(1), LogEntry(4)], slice(None, None), [LogEntry(1), LogEntry(4)]),
+    ([LogEntry(1), LogEntry(4)], slice(1, 2), [LogEntry(1)]),
+    ([LogEntry(1), LogEntry(4)], slice(2, 3), [LogEntry(4)]),
+])
+def test_log_fetch_entry(log, index, expected_entries):
+    log_fixture.logs = OneIndexList(log)
+    assert log_fixture.logs[index] == expected_entries
+

@@ -26,7 +26,7 @@ class Raft:
         timeout_provider=lambda: randint(150, 300),
     ):
         self.role = 'follower'
-        self.servers = servers  # List[id, tuple(port, host)] including itself.
+        self.servers = servers
         self.server_id = server_id
         self.outbox = outbox
         self.leader_id = None
@@ -173,12 +173,15 @@ class Raft:
         self.commit()
 
     def commit(self):
+        assert len(self.match_index) > 2 and len(self.match_index) % 2 == 1
+
         match_indices = sorted([index for index in self.match_index.values()])
         largest_majority_index = match_indices[math.floor(len(self.match_index) / 2)]
-        for idx in range(self.commit_index, largest_majority_index):
+        for idx in range(self.commit_index, largest_majority_index + 1):
+            if idx == 0:
+                continue
             if self.log[idx].term == self.current_term:
                 self.commit_index = idx
-
 
     def handle_tick(self):
         self.timeout_ms -= 1
