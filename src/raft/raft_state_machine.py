@@ -166,15 +166,22 @@ class Raft:
             ))
 
     def handle_request_vote(self, message: RequestVoteRequest, receiver_id):
-        logger.info("HANDLE REQUEST VOTE!")
+        logger.info(
+            f"Handle request vote; voted_for {self.voted_for}, server_id: {self.server_id}, "
+            f"log len: {len(self.log)}  candidate id {message.candidate_id}, "
+            f"candidate message last log {message.last_log_index}"
+        )
+
         if (
             (self.voted_for is None or self.voted_for == message.candidate_id)
             and message.last_log_index >= len(self.log)
         ):
+            logger.info(f"Vote granted to {message.candidate_id}!")
             self.voted_for = message.candidate_id
             self.set_timeout()
             self.outbox.put(Message(RequestVoteReply(self.current_term, True), sender=self.server_id, receiver=receiver_id))
 
+        logger.info(f"Vote not granted to {message.candidate_id}!")
         self.outbox.put(Message(RequestVoteReply(self.current_term, False), sender=self.server_id, receiver=receiver_id))
 
     def handle_request_vote_reply(self, message: RequestVoteReply, client_id):
@@ -248,16 +255,18 @@ class Raft:
         self.reset_heartbeat(timeout=0)
 
     def _set_follower(self):
+        logger.info("Set role to follower")
         self.role = "follower"
         self.voted_for = None
         self.votes_received = set()
         self.set_timeout()
 
     def handle_msg(self, msg: Message):
-        if self.current_term < msg.action.term and self.role != 'follower':
+        if self.current_term < msg.action.term:
             self.current_term = msg.action.term
-            self._set_follower()
-            return
+            self.voted_for = None
+            if self.role != 'follower':
+                self._set_follower()
 
         if isinstance(msg.action, AppendEntriesRequest):
             if msg.action.term < self.current_term:

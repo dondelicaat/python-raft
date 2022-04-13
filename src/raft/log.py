@@ -79,10 +79,10 @@ class Log:
 
     def append(self, entry):
         self.logs.append(entry)
-        self.write_to_log(entry.term)
+        self.write_to_log(entry)
 
-    def write_to_log(self, cmd):
-        self.log_file.write(cmd + '\n')
+    def write_to_log(self, entry: LogEntry):
+        self.log_file.write(f"{entry.term}\n")
         self.log_file.flush()
 
     def replay(self):
