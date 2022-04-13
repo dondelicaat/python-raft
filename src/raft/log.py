@@ -75,13 +75,14 @@ class Log:
             elif entry != entry:
                 raise MessageConflict(f"{entry} does not equal {entry}")
 
-            self.logs.append(entry)
+            self.append(entry)
 
     def append(self, entry):
         self.logs.append(entry)
         self.write_to_log(entry)
 
     def write_to_log(self, entry: LogEntry):
+        logger.info(f"Writing and flushing logs to file!! {entry}")
         self.log_file.write(f"{entry.term}\n")
         self.log_file.flush()
 

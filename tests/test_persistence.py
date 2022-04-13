@@ -6,7 +6,7 @@ from raft.raft_state_machine import Raft
 
 
 def test_persistence():
-    with tempfile.NamedTemporaryFile('rb+') as tmp:
+    with tempfile.NamedTemporaryFile('wb+') as tmp:
         metadata_backend = MetadataBackend(tmp)
 
         raft = Raft(
@@ -30,4 +30,3 @@ def test_persistence():
         raft_voted_for = 7
         raft.voted_for = raft_voted_for
         assert raft2.voted_for == raft_voted_for
-

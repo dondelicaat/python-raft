@@ -1,27 +1,28 @@
-import socket
 import logging
-import uuid
+import socket
 from threading import Thread
 from queue import Queue
 
 from raft.fixed_header_message import FixedHeaderMessageProtocol
 from raft.rpc_calls import Message, Close
 
-logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class RaftServer:
     def __init__(
             self, host, port, protocol: FixedHeaderMessageProtocol,
-            inbox: Queue,
-            concurrent_clients=16
+            servers: dict, server_id: int, inbox: Queue, concurrent_clients=16
     ):
         self.host = host
         self.port = port
         self.protocol = protocol
+        self.servers = servers
+        self.server_id = server_id
         self.concurrent_clients = concurrent_clients
         self.inbox = inbox
         self.clients = {}
+        self.raft_clients = {}
 
     def run(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -40,21 +41,51 @@ class RaftServer:
 
     def handle_client(self, client, client_address):
         logging.info("started a new connection")
-        client_id = str(uuid.uuid4())
 
         with client:
             while True:
                 msg_bytes = self.protocol.receive_message(client)
                 msg = Message.from_bytes(msg_bytes)
+
+                # Non-raft client
+                if client_address not in self.servers.values():
+                    self.clients[msg.sender] = client
+
                 if isinstance(msg.action, Close):
                     logging.info("Closing connection")
-                    del self.clients[client_id]
                     break
-                self.inbox.put((msg, client_id))
-                self.clients[client_id] = client
+                self.inbox.put(msg)
 
-    def send(self, client_id, message):
-        # Todo: error handling
-        client = self.clients[client_id]
-        self.protocol.send_message(socket=client, body=bytes(message))
+    def send(self, message):
+        # try:
+        #     client = self.clients[client_id]
+        # except KeyError as key_err:
+        #     logging.info("Key %s not found in clients dict", client_id)
+        #     if client_id in self.servers.keys():
+        #         client = self.get_connection(**self.servers[client_id])
+        #         self.clients[client_id] = client
+        #     else:
+        #         # Todo: create / fetch non-raft client connection?
+        #         logging.info("Could not send message, seems the client has disconnected.")
+        #         return
+        client_id = message.receiver
+        client_address = self.servers[client_id]
+        if client_id in self.servers.keys():
+            client = self.get_connection(*client_address)
+        try:
+            client.connect(client_address)
+            self.protocol.send_message(socket=client, body=bytes(message))
+            self.close(client, message.sender, message.receiver)
+        except ConnectionError:
+            logger.info(f"Could not connect to {client_address}")
 
+
+    def get_connection(self, host, port):
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return s
+
+    def close(self, s, sender, receiver):
+        msg = Message(Close(), sender=sender, receiver=receiver)
+        self.protocol.send_message(s, bytes(msg))
+        s.close()

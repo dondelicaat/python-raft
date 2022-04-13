@@ -27,7 +27,7 @@ class Raft:
         outbox: Queue,
         log: Log,
         metadata_backend: MetadataBackend,
-        timeout_provider=lambda: randint(5, 50),
+        timeout_provider=lambda: randint(15, 50),
     ):
         self.role = 'follower'
         self.servers = servers
@@ -55,6 +55,7 @@ class Raft:
         self.heartbeat_timeout_ms = None
         self.timeout_provider = timeout_provider
         self.set_timeout()
+        self.reset_heartbeat(self.heartbeat_interval)
 
     def reset_heartbeat(self, timeout):
         self.heartbeat_timeout_ms = timeout
@@ -89,6 +90,8 @@ class Raft:
     def handle_heartbeat(self):
         if self.role != "leader":
             return
+
+        logging.info(f"Sending out heartbeat: next index: {self.next_index}, commit index: {self.commit_index}, log: {self.log.logs}")
 
         last_log_index = len(self.log)
         for server_id, _ in self.servers.items():
@@ -136,6 +139,7 @@ class Raft:
                 term=self.current_term, candidate_id=self.server_id,
                 last_log_term=last_log_term, last_log_index=last_log_index
             )
+            logger.info(f"Request send: {request_vote_request}")
             self.outbox.put(Message(request_vote_request, sender=self.server_id, receiver=server_id))
 
     def handle_append_entries(self, message: AppendEntriesRequest, receiver_id):
@@ -195,6 +199,7 @@ class Raft:
             self._set_leader()
 
     def handle_append_entries_reply(self, message: AppendEntriesReply, server_id):
+        logger.info(f"Request send: {message}")
         if not message.succes:
             self.next_index[server_id] -= 1
         elif not message.entries_added:
@@ -202,7 +207,7 @@ class Raft:
             self.match_index[server_id] = message.last_log_index
         else:
             self.next_index[server_id] = message.last_log_index + 1
-            self.match_index[server_id] = message.last_log_index + 1
+            self.match_index[server_id] = message.last_log_index
 
         self.commit()
 
@@ -220,8 +225,8 @@ class Raft:
 
     def handle_tick(self):
         self.timeout_ms -= 1
-        self.heartbeat_interval -= 1
-        if self.heartbeat_interval <= 0:
+        self.heartbeat_timeout_ms -= 1
+        if self.heartbeat_timeout_ms <= 0:
             self.handle_heartbeat()
         if self.timeout_ms <= 0:
             self.handle_timeout()
@@ -232,7 +237,7 @@ class Raft:
             self._set_candidate()
         elif self.role == "candidate":
             self._set_candidate()
-        elif self.role == "leader":  # todo: shouldn't happen
+        elif self.role == "leader":
             self.set_timeout()
 
     def _set_candidate(self):
@@ -262,6 +267,7 @@ class Raft:
         self.set_timeout()
 
     def handle_msg(self, msg: Message):
+        logger.info(f"Message {msg.action} from {msg.sender} received by {msg.receiver}")
         if self.current_term < msg.action.term:
             self.current_term = msg.action.term
             self.voted_for = None

@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+from pathlib import Path
 from queue import Queue
 from threading import Thread
 from typing import TextIO, BinaryIO
@@ -93,9 +94,12 @@ class RaftServerController:
 if __name__ == "__main__":
     server_id = int(os.environ.get('SERVER_ID'))
     num_servers = int(os.environ.get('NUM_SERVERS'))
-    raft_directory = '/tmp/raft'
-    with open(f"{raft_directory}/data_{server_id}.log", 'w+') as log_file, \
-         open(f"{raft_directory}/metadata_{server_id}", 'wb+') as metadata_file:
+    raft_data_log = f"/tmp/raft/data_{server_id}.log"
+    raft_metadata = f"/tmp/raft/metadata_{server_id}"
+    Path(raft_data_log).touch()
+    Path(raft_metadata).touch()
+    with open(raft_data_log, 'r+') as log_file, \
+         open(raft_metadata, 'rb+') as metadata_file:
 
         raft_server_controller = RaftServerController(
             log_file_handler=log_file,
