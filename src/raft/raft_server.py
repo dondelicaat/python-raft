@@ -1,5 +1,6 @@
 import logging
 import socket
+import uuid
 from threading import Thread
 from queue import Queue
 
@@ -49,7 +50,9 @@ class RaftServer:
 
                 # Non-raft client
                 if client_address not in self.servers.values():
-                    self.clients[msg.sender] = client
+                    msg.host = client_address[0]
+                    msg.port = client_address[1]
+                    self.clients[f"{msg.host}:{msg.port}"] = client
 
                 if isinstance(msg.action, Close):
                     logging.info("Closing connection")
@@ -69,18 +72,25 @@ class RaftServer:
         #         logging.info("Could not send message, seems the client has disconnected.")
         #         return
         client_id = message.receiver
-        client_address = self.servers[client_id]
+        logger.info(f"Trying to send message: {message.action} to {message.host} : {message.port}!")
         if client_id in self.servers.keys():
-            client = self.get_connection(*client_address)
-        try:
-            client.connect(client_address)
+            client_address = self.servers[client_id]
+            client = self.get_connection()
+            try:
+                client.connect(client_address)
+                self.protocol.send_message(socket=client, body=bytes(message))
+                self.close(client, message.sender, message.receiver)
+            except ConnectionError:
+                logger.info(f"Could not connect to {client_address}")
+
+        elif message.port and message.host:
+            logger.info("Fetching host creds")
+            client = self.clients[f"{message.host}:{message.port}"]
             self.protocol.send_message(socket=client, body=bytes(message))
-            self.close(client, message.sender, message.receiver)
-        except ConnectionError:
-            logger.info(f"Could not connect to {client_address}")
 
 
-    def get_connection(self, host, port):
+
+    def get_connection(self):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         return s

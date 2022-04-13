@@ -1,0 +1,55 @@
+# KV store with get set value -> Leader should keep track of a list of messages to process
+# and on commit should check whether there are pending messages which can now be replied
+import socket
+
+from raft.rpc_calls import Message, SetValue, GetValue, DelValue, Close
+from raft.fixed_header_message import FixedHeaderMessageProtocol
+
+
+class Client:
+    def __init__(self, host, port, protocol: FixedHeaderMessageProtocol):
+        self.host = host
+        self.port = port
+        self.protocol = protocol
+        self.socket = None
+
+    def connect(self):
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.socket.connect((self.host, self.port))
+
+    def close(self):
+        msg = Message(Close(), receiver=0, sender=0)
+        self.protocol.send_message(self.socket, bytes(msg))
+        self.socket.close()
+
+    def __setitem__(self, key, value):
+        msg = Message(SetValue(key, value), receiver=0, sender=0)
+        self.protocol.send_message(self.socket, bytes(msg))
+        response = self.protocol.receive_message(self.socket)
+        return Message.from_bytes(response)
+
+    def __getitem__(self, key):
+        msg = Message(GetValue(key), receiver=0, sender=0)
+        self.protocol.send_message(self.socket, bytes(msg))
+        response = self.protocol.receive_message(self.socket)
+        return Message.from_bytes(response).action.value
+
+    def __delitem__(self, key):
+        msg = Message(DelValue(key), receiver=0, sender=0)
+        self.protocol.send_message(self.socket, bytes(msg))
+        response = self.protocol.receive_message(self.socket)
+        return Message.from_bytes(response)
+
+
+if __name__ == "__main__":
+    protocol = FixedHeaderMessageProtocol(header_size=8)
+    client = Client(
+        host='localhost',
+        port=9090,
+        protocol=protocol
+    )
+    client.connect()
+    client["TEST"] = "KEY"
+    print(client["k"])
+    client.close()

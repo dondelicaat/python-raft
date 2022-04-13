@@ -40,7 +40,7 @@ SetValue = NamedTuple("SetValue", key=str, value=str)
 GetValue = NamedTuple("GetValue", key=str)
 DelValue = NamedTuple("DelValue", key=str)
 Value    = NamedTuple("Value", value=str)
-
+Forward  = NamedTuple("Forward", leader_host=str, leader_port=int)
 Close = NamedTuple("Close")
 Ok = NamedTuple(
     "Ok",
@@ -51,10 +51,12 @@ Action = Union[
 
 
 class Message:
-    def __init__(self, action: Action, sender: int, receiver: int):
+    def __init__(self, action: Action, sender: int, receiver: int, host: str = None, port: int = None):
         self.action = action
         self.sender = sender
         self.receiver = receiver
+        self.host = host
+        self.port = port
 
     def __bytes__(self):
         return pickle.dumps(self.__dict__)
@@ -62,5 +64,7 @@ class Message:
     @classmethod
     def from_bytes(cls, bytes):
         return cls(**pickle.loads(bytes))
+
+
 
 

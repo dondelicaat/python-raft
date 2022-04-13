@@ -4,11 +4,12 @@ from enum import Enum
 from queue import Queue
 from random import randint
 
-from raft.log import Log, TermNotOk, LogNotCaughtUpException
+from raft.log import Log, TermNotOk, LogNotCaughtUpException, LogEntry
 from raft.metadata_backend import MetadataBackend
 from raft.rpc_calls import AppendEntriesRequest, AppendEntriesReply, RequestVoteReply, \
-    RequestVoteRequest, Message
+    RequestVoteRequest, Message, SetValue, Forward, Action, GetValue, Ok, Value
 
+# TODO: What happens when all machines go down? commit index lost, how is state machine rebuild from logs?
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ class Raft:
         log: Log,
         metadata_backend: MetadataBackend,
         timeout_provider=lambda: randint(15, 50),
+        state_machine={},
     ):
         self.role = 'follower'
         self.servers = servers
@@ -45,7 +47,8 @@ class Raft:
         self.match_index = {}
         self.votes_received = set()
 
-        self.client_messages_received = []
+        self.client_messages_received = Queue()
+        self.state_machine = state_machine
 
         self.log = log
         self.log.replay()
@@ -144,6 +147,7 @@ class Raft:
 
     def handle_append_entries(self, message: AppendEntriesRequest, receiver_id):
         assert self.role == "follower"
+        self.leader_id = message.leader_id
         self.set_timeout()
 
         try:
@@ -210,6 +214,28 @@ class Raft:
             self.match_index[server_id] = message.last_log_index
 
         self.commit()
+        self.apply_logs()
+
+    def apply_logs(self):
+        logger.info(f"Trying to apply logs applied_idx: {self.last_applied}, commitindex: {self.commit_index}, to process: {self.client_messages_received.qsize()}")
+        assert self.last_applied <= self.commit_index
+
+        while self.last_applied < self.commit_index:
+            msg = self.client_messages_received.get()
+            reply = None
+            if isinstance(msg.action, SetValue):
+                self.state_machine[msg.action.key] = msg.action.value
+                reply = Message(Ok, sender=None, receiver=None, host=msg.host, port=msg.port)
+            elif isinstance(msg.action, GetValue):
+                try:
+                    value = self.state_machine[msg.action.key]
+                except KeyError:
+                    pass # How to deal with this?
+
+                reply = Message(Value(value), sender=None, receiver=None, host=msg.host, port=msg.port)
+
+            self.outbox.put(reply)
+            self.last_applied += 1
 
     def commit(self):
         logger.info(f"match_index: {self.match_index}, commit index: {self.commit_index}, logs: {self.log.logs}, current term: {self.current_term}")
@@ -252,6 +278,7 @@ class Raft:
     def _set_leader(self):
         self.role = "leader"
         self.voted_for = None
+        self.leader_id = self.server_id
         last_log_index = len(self.log)
         self.next_index = {idx: last_log_index + 1 for idx in self.servers}
         self.match_index = {idx: 0 for idx in self.servers}
@@ -268,6 +295,10 @@ class Raft:
 
     def handle_msg(self, msg: Message):
         logger.info(f"Message {msg.action} from {msg.sender} received by {msg.receiver}")
+        if not hasattr(msg.action, 'term'):
+            self.handle_client_message(msg)
+            return
+
         if self.current_term < msg.action.term:
             self.current_term = msg.action.term
             self.voted_for = None
@@ -298,3 +329,19 @@ class Raft:
         else:
             raise ValueError(f"Unknown request {msg}")
 
+    def handle_client_message(self, msg):
+        logger.info(f"role: {self.role}, leader_id: {self.leader_id}")
+        if self.role == 'candidate':
+            # Todo: Wait for leader to be elected and then pass back leader id?
+            pass
+        elif self.role == 'follower':
+            if self.leader_id is not None:
+                leader_address = self.servers[self.leader_id]
+                self.outbox.put(
+                    Message(Forward(*leader_address), receiver=None, sender=None, host=msg.host, port=msg.port)
+                )
+            # todo: what if leader still needs to be elected or first iteration?
+        else:
+            if isinstance(msg.action, SetValue):
+                self.log.append(LogEntry(self.current_term)) #Todo, also save actual command so it can be replayed / recovered
+                self.client_messages_received.put(msg)
