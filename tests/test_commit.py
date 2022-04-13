@@ -1,4 +1,3 @@
-from queue import Queue
 from unittest.mock import MagicMock
 
 from raft.log import LogEntry, Log, OneIndexList

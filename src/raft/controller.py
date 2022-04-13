@@ -2,6 +2,7 @@ import os
 import time
 from queue import Queue
 from threading import Thread
+from typing import TextIO, BinaryIO
 
 from raft.fixed_header_message import FixedHeaderMessageProtocol
 from raft.log import Log
@@ -11,16 +12,13 @@ from raft.raft_state_machine import Raft
 
 
 class RaftServerController:
-    def __init__(self, server_id: int, num_servers: int):  #  pass file handles to raft_server_controller
+    def __init__(self, server_id: int, num_servers: int,
+                 log_file_handler: TextIO, metadata_file_handler: BinaryIO):
         base_port = 9090
         self.host = 'localhost'
         self.port = base_port + server_id
-        try:
-            self.log_file = open(f"/tmp/data_{server_id}.log", 'w+')
-            self.persistent_metadata = open(f"/tmp/metadata_{server_id}", 'wb+')
-        except OSError as e:
-            print(f"OSError: {e}")
-            raise
+        self.log_file = log_file_handler
+        self.persistent_metadata = metadata_file_handler
         servers = {idx: ('localhost', base_port + idx) for idx in range(num_servers)}
 
         assert len(servers) > 2 and len(servers) % 2 == 1
@@ -44,6 +42,12 @@ class RaftServerController:
     def do_tick(self):
         self.raft.handle_tick()
 
+    def do_heartbeat(self):
+        while True:
+            self.raft.handle_heartbeat()
+            # Heartbeat each 10 ms
+            time.sleep(0.01)
+
     def drive_clock(self, ticks_per_second=1.0):
         while True:
             time.sleep(1 / ticks_per_second)
@@ -64,17 +68,29 @@ class RaftServerController:
         handle_outbox_thread = Thread(target=self.handle_outbox)
         handle_input_thread = Thread(target=self.handle_inbox)
         raft_clock_driver = Thread(target=self.drive_clock)
-        # leader_heartbeat_driver()
+        raft_heartbeat_driver = Thread(target=self.do_heartbeat)
 
         raft_server_thread.start()
         handle_outbox_thread.start()
         handle_input_thread.start()
         raft_clock_driver.start()
+        raft_heartbeat_driver.start()
+
+        while True:
+            print(f"Raft status: role {self.raft.role}, current term: {self.raft.current_term}, votes received {self.raft.votes_received}", end='\r')
+            time.sleep(0.1)
 
 
 if __name__ == "__main__":
-    raft_server_controller = RaftServerController(
-        server_id=int(os.environ.get('SERVER_ID')),
-        num_servers=int(os.environ.get('NUM_SERVERS')),
-    )
-    raft_server_controller.run()
+    server_id = int(os.environ.get('SERVER_ID'))
+    num_servers = int(os.environ.get('NUM_SERVERS'))
+    with open(f"/tmp/data_{server_id}.log", 'w+') as log_file, \
+         open(f"/tmp/metadata_{server_id}", 'wb+') as metadata_file:
+
+        raft_server_controller = RaftServerController(
+            log_file_handler=log_file,
+            metadata_file_handler=metadata_file,
+            server_id=server_id,
+            num_servers=num_servers,
+        )
+        raft_server_controller.run()

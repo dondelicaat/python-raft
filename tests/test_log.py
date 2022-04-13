@@ -1,7 +1,10 @@
+import tempfile
 from unittest.mock import MagicMock
 
 from raft.log import Log, LogEntry, TermNotOk, OneIndexList, LogNotCaughtUpException
 import pytest
+
+from tests.test_leader_follow_replication import get_log_entries
 
 
 @pytest.fixture(autouse=True)
@@ -83,3 +86,15 @@ def test_log_fetch_entry(log, index, expected_entries):
     log_fixture.logs = OneIndexList(log)
     assert log_fixture.logs[index] == expected_entries
 
+
+def test_log_write_replay():
+    log_entries = get_log_entries([1, 2, 3, 4, 5])
+    with tempfile.NamedTemporaryFile('w+') as temp_file:
+        log = Log(temp_file)
+        for entry in log_entries:
+            log.write_to_log(entry)
+
+        replayed_log = Log(temp_file)
+        replayed_log.replay()
+
+        assert replayed_log.logs == log_entries
