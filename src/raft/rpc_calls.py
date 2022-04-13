@@ -17,6 +17,7 @@ AppendEntriesReply = NamedTuple(
     term=int,
     succes=bool,
     last_log_index=int,
+    entries_added=int,
 )
 RequestVoteRequest = NamedTuple(
     "RequestVoteRequest",
@@ -35,11 +36,18 @@ Command = NamedTuple(
     cmd=str,
 )
 
+SetValue = NamedTuple("SetValue", key=str, value=str)
+GetValue = NamedTuple("GetValue", key=str)
+DelValue = NamedTuple("DelValue", key=str)
+Value    = NamedTuple("Value", value=str)
+
 Close = NamedTuple("Close")
 Ok = NamedTuple(
     "Ok",
 )
-Action = Union[AppendEntriesRequest, RequestVoteRequest, AppendEntriesReply, RequestVoteReply, Command, Ok]
+Action = Union[
+    AppendEntriesRequest, RequestVoteRequest, AppendEntriesReply, RequestVoteReply, Command,
+    SetValue, GetValue, DelValue, Value, Close, Ok]
 
 
 class Message:

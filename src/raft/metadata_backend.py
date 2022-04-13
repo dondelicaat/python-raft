@@ -1,9 +1,10 @@
 import logging
 import pickle
+from typing import BinaryIO
 
 
 class MetadataBackend:
-    def __init__(self, file_handle):
+    def __init__(self, file_handle: BinaryIO):
         self.file_handle = file_handle
         try:
             self.file_handle.seek(0)

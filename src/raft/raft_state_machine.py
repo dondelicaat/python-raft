@@ -1,3 +1,4 @@
+import logging
 import math
 from enum import Enum
 from queue import Queue
@@ -7,6 +8,9 @@ from raft.log import Log, TermNotOk, LogNotCaughtUpException
 from raft.metadata_backend import MetadataBackend
 from raft.rpc_calls import AppendEntriesRequest, AppendEntriesReply, RequestVoteReply, \
     RequestVoteRequest, Message
+
+
+logger = logging.getLogger(__name__)
 
 
 class Role(Enum):
@@ -23,7 +27,7 @@ class Raft:
         outbox: Queue,
         log: Log,
         metadata_backend: MetadataBackend,
-        timeout_provider=lambda: randint(150, 300),
+        timeout_provider=lambda: randint(5, 50),
     ):
         self.role = 'follower'
         self.servers = servers
@@ -41,12 +45,19 @@ class Raft:
         self.match_index = {}
         self.votes_received = set()
 
+        self.client_messages_received = []
+
         self.log = log
         self.log.replay()
 
         self.timeout_ms = None
+        self.heartbeat_interval = 10
+        self.heartbeat_timeout_ms = None
         self.timeout_provider = timeout_provider
         self.set_timeout()
+
+    def reset_heartbeat(self, timeout):
+        self.heartbeat_timeout_ms = timeout
 
     @property
     def voted_for(self):
@@ -57,7 +68,7 @@ class Raft:
 
     @voted_for.setter
     def voted_for(self, value):
-        self.metadata_backend.write({'voted_for': value, 'current_term': self._current_term})
+        self.metadata_backend.write({'voted_for': value, 'current_term': self.current_term})
         self._voted_for = value
 
     @property
@@ -69,7 +80,7 @@ class Raft:
 
     @current_term.setter
     def current_term(self, value):
-        self.metadata_backend.write({'voted_for': self._voted_for, 'current_term': value})
+        self.metadata_backend.write({'voted_for': self.voted_for, 'current_term': value})
         self._current_term = value
 
     def set_timeout(self):
@@ -90,7 +101,7 @@ class Raft:
             if server_next_idx <= last_log_index:
                 entries = self.log[server_next_idx:].to_list()
 
-            if server_next_idx != 0:
+            if server_next_idx > 1:
                 prev_log_index = server_next_idx - 1
                 prev_log_term = self.log[prev_log_index].term
             else:
@@ -107,6 +118,8 @@ class Raft:
             )
             self.outbox.put(Message(append_entries_request, sender=self.server_id, receiver=server_id))
 
+        self.reset_heartbeat(self.heartbeat_interval)
+
     def broadcast_election(self):
         assert self.role == 'candidate'
 
@@ -115,7 +128,10 @@ class Raft:
                 continue
 
             last_log_index = len(self.log)
-            last_log_term = self.log[last_log_index]
+            if last_log_index > 0:
+                last_log_term = self.log[last_log_index]
+            else:
+                last_log_term = self.current_term
             request_vote_request = RequestVoteRequest(
                 term=self.current_term, candidate_id=self.server_id,
                 last_log_term=last_log_term, last_log_index=last_log_index
@@ -133,20 +149,28 @@ class Raft:
                 entries=message.entries,
             )
         except (TermNotOk, LogNotCaughtUpException):
-            self.outbox.put(Message(AppendEntriesReply(self.current_term, False, -1), sender=self.server_id, receiver=receiver_id))
+            self.outbox.put(Message(
+                AppendEntriesReply(self.current_term, False, -1, entries_added=0)
+                , sender=self.server_id, receiver=receiver_id))
             return
 
         if message.leader_commit > self.commit_index:
             self.commit_index = min(message.leader_commit, len(self.log))
 
         last_log_index = len(self.log)
-        self.outbox.put(Message(AppendEntriesReply(self.current_term, True, last_log_index), sender=self.server_id, receiver=receiver_id))
+        self.outbox.put(
+            Message(
+                AppendEntriesReply(self.current_term, True, last_log_index, entries_added=len(message.entries)),
+                sender=self.server_id,
+                receiver=receiver_id
+            ))
 
     def handle_request_vote(self, message: RequestVoteRequest, receiver_id):
+        logger.info("HANDLE REQUEST VOTE!")
         if (
             (self.voted_for is None or self.voted_for == message.candidate_id)
             and message.last_log_index >= len(self.log)
-        ):  # should term also be the same? # see page 8 4.2.1 last paragraph test message.last_log_index logic as well.
+        ):
             self.voted_for = message.candidate_id
             self.set_timeout()
             self.outbox.put(Message(RequestVoteReply(self.current_term, True), sender=self.server_id, receiver=receiver_id))
@@ -166,6 +190,9 @@ class Raft:
     def handle_append_entries_reply(self, message: AppendEntriesReply, server_id):
         if not message.succes:
             self.next_index[server_id] -= 1
+        elif not message.entries_added:
+            self.next_index[server_id] = message.last_log_index
+            self.match_index[server_id] = message.last_log_index
         else:
             self.next_index[server_id] = message.last_log_index + 1
             self.match_index[server_id] = message.last_log_index + 1
@@ -173,6 +200,7 @@ class Raft:
         self.commit()
 
     def commit(self):
+        logger.info(f"match_index: {self.match_index}, commit index: {self.commit_index}, logs: {self.log.logs}, current term: {self.current_term}")
         assert len(self.match_index) > 2 and len(self.match_index) % 2 == 1
 
         match_indices = sorted([index for index in self.match_index.values()])
@@ -185,18 +213,23 @@ class Raft:
 
     def handle_tick(self):
         self.timeout_ms -= 1
+        self.heartbeat_interval -= 1
+        if self.heartbeat_interval <= 0:
+            self.handle_heartbeat()
         if self.timeout_ms <= 0:
             self.handle_timeout()
 
     def handle_timeout(self):
+        logger.info("Handle timeout called")
         if self.role == "follower":
             self._set_candidate()
-        if self.role == "candidate":
+        elif self.role == "candidate":
             self._set_candidate()
         elif self.role == "leader":  # todo: shouldn't happen
             self.set_timeout()
 
     def _set_candidate(self):
+        logger.info(f"set candidate called by {self.server_id} with {self.current_term}")
         self.role = "candidate"
         self.current_term += 1
         self.voted_for = self.server_id
@@ -210,11 +243,14 @@ class Raft:
         last_log_index = len(self.log)
         self.next_index = {idx: last_log_index + 1 for idx in self.servers}
         self.match_index = {idx: 0 for idx in self.servers}
+        self.votes_received = set()
         self.set_timeout()
+        self.reset_heartbeat(timeout=0)
 
     def _set_follower(self):
         self.role = "follower"
         self.voted_for = None
+        self.votes_received = set()
         self.set_timeout()
 
     def handle_msg(self, msg: Message):
