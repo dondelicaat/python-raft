@@ -58,6 +58,7 @@ class RaftServer:
                         logging.info("Closing connection")
                         break
                     self.inbox.put(msg)
+
         except ConnectionResetError:
             logging.info("Client closed the connection")
 

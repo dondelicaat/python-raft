@@ -48,6 +48,9 @@ class Raft:
         self.votes_received = set()
 
         self.client_messages_received = dict()
+
+        self.read_only_messages = []
+        self.accepting_read_only_requests = False
         self.state_machine = state_machine
 
         self.log = log
@@ -299,11 +302,11 @@ class Raft:
         self.votes_received = set()
         self.set_timeout()
         self.reset_heartbeat(timeout=0)
-        # self.accepting_read_only_requests = False
-        # commit no_op -> ensures we get up to date commit index
-        # self.logs.append(LogEntry(term, 'no-op'))
+        self.accepting_read_only_requests = False
+        self.log.append(LogEntry(self.current_term, '_:NOOP'))
         # set self.accepting_read_only_requests = True when no-op is committed
-        # Before each read-only request we have to check if we have a majority heartbeats (get queue of read only requests)
+        # Before each read-only request we have to check if we
+        # have a majority heartbeats (get queue of read only requests)
 
     def _set_follower(self):
         logger.info("Set role to follower")
@@ -367,8 +370,7 @@ class Raft:
                 self.log.append(LogEntry(self.current_term, command))
                 self.client_messages_received[command] = msg.sender
             elif isinstance(msg.action, GetValue):
-                command = f"GET:{msg.action.key}"
-                # todo: Add to read-only queue
+                self.read_only_messages.append((msg.action.sender, msg.action.key))
             elif isinstance(msg.action, DelValue):
                 command = f"DEL:{msg.action.key}"
                 self.log.append(LogEntry(self.current_term, command))
