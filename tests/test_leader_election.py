@@ -38,6 +38,7 @@ def test_timeout(time_difference, initial_role, expected_role, backend_metadata_
         metadata_backend=backend_metadata_mock,
         timeout_provider=lambda: timeout + time_difference,
         log=MagicMock(),
+        state_machine=MagicMock()
     )
 
     if initial_role == 'candidate':
@@ -66,6 +67,7 @@ def test_votes(number_of_machines, number_of_votes, initial_role, expected_role,
         outbox=MagicMock(),
         metadata_backend=backend_metadata_mock,
         log=MagicMock(),
+        state_machine=MagicMock(),
     )
     raft.role = initial_role
     raft.current_term = 1
@@ -94,6 +96,7 @@ def test_votes(number_of_machines, number_of_votes, initial_role, expected_role,
         outbox=MagicMock(),
         metadata_backend=backend_metadata_mock,
         log=MagicMock(),
+        state_machine=MagicMock(),
     )
     raft.role = initial_role
     raft.current_term = 1
@@ -120,6 +123,7 @@ def test_start_election(number_of_machines, number_of_votes, initial_role, expec
         outbox=shared_queue,
         metadata_backend=backend_metadata_mock,
         log=candidate_log,
+        state_machine=MagicMock(),
     )
     raft_candidate.current_term = 1
     raft_candidate._set_candidate()
@@ -131,6 +135,7 @@ def test_start_election(number_of_machines, number_of_votes, initial_role, expec
             outbox=shared_queue,
             metadata_backend=backend_metadata_mock,
             log=MagicMock(),
+            state_machine=MagicMock()
         )
         raft_follower.role = 'follower'
         request_vote = shared_queue.get()
@@ -157,6 +162,7 @@ def test_handle_append_entries_request(current_term, sender_term, initial_role, 
         metadata_backend=backend_metadata_mock,
         outbox=MagicMock(),
         log=MagicMock(),
+        state_machine=MagicMock()
     )
     raft.role = initial_role
     raft.current_term = current_term
@@ -167,7 +173,7 @@ def test_handle_append_entries_request(current_term, sender_term, initial_role, 
         prev_log_index=123,
         prev_log_term=2,
         leader_commit=1,
-        entries=[LogEntry(3)]
+        entries=[LogEntry(3, 'test')]
     )
     raft.handle_msg(Message(append_entries_request, sender=1, receiver=0))
 
@@ -176,11 +182,11 @@ def test_handle_append_entries_request(current_term, sender_term, initial_role, 
 
 @pytest.mark.parametrize("follower_log_entries,follower_term,follower_voted_for,candidate_term,candidate_last_log_index,candidate_last_log_term,expected",
     [
-        ([LogEntry(1)], 1, None, 1, 1, 1, True),
-        ([LogEntry(1)], 1, 1, 1, 1, 1, True),
-        ([LogEntry(1)], 1, 2, 1, 1, 1, False),
-        ([LogEntry(1), LogEntry(1)], 1, 1, 1, 2, 1, True),  # candidate.last_log_indedx == len(follower.logs)
-        ([LogEntry(1), LogEntry(1), LogEntry(1)], 1, 1, 1, 2, 1, False), # candidate.last_log_indedx < len(follower.logs)
+        ([LogEntry(1, 'test')], 1, None, 1, 1, 1, True),
+        ([LogEntry(1, 'test')], 1, 1, 1, 1, 1, True),
+        ([LogEntry(1, 'test')], 1, 2, 1, 1, 1, False),
+        ([LogEntry(1, 'test'), LogEntry(1, 'test')], 1, 1, 1, 2, 1, True),  # candidate.last_log_indedx == len(follower.logs)
+        ([LogEntry(1, 'test'), LogEntry(1, 'test'), LogEntry(1, 'test')], 1, 1, 1, 2, 1, False), # candidate.last_log_indedx < len(follower.logs)
     ]
 )
 def test_granting_vote(follower_log_entries, follower_term, follower_voted_for, candidate_term,
@@ -196,6 +202,7 @@ def test_granting_vote(follower_log_entries, follower_term, follower_voted_for, 
         metadata_backend=backend_metadata_mock,
         outbox=shared_queue,
         log=follower_log,
+        state_machine=MagicMock(),
     )
     raft_follower.current_term = follower_term
     raft_follower.voted_for = follower_voted_for
@@ -214,7 +221,7 @@ def test_granting_vote(follower_log_entries, follower_term, follower_voted_for, 
 
 @pytest.mark.parametrize("follower_log_entries,follower_term,follower_voted_for,candidate_term,candidate_last_log_index,candidate_last_log_term",
     [
-        ([LogEntry(1)], 2, None, 1, 1, 1),  # Follow.current_term > candidate.term
+        ([LogEntry(1, 'test')], 2, None, 1, 1, 1),  # Follow.current_term > candidate.term
     ]
 )
 def test_message_dropped(follower_log_entries, follower_term, follower_voted_for, candidate_term,
@@ -229,6 +236,7 @@ def test_message_dropped(follower_log_entries, follower_term, follower_voted_for
         metadata_backend=backend_metadata_mock,
         outbox=shared_queue,
         log=follower_log,
+        state_machine=MagicMock(),
     )
     raft_follower.current_term = follower_term
     raft_follower.voted_for = follower_voted_for

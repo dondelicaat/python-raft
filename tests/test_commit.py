@@ -7,8 +7,8 @@ import pytest
 
 @pytest.mark.parametrize("leader_log_entries,match_index,leader_term,expected_commit_index",
     [
-        ([LogEntry(1), LogEntry(2), LogEntry(2)], {0: 3, 1: 3, 2: 3}, 2, 3),
-        ([LogEntry(1), LogEntry(2), LogEntry(2)], {0: 1, 1: 1, 2: 3}, 1, 1),
+        ([LogEntry(1, 'test'), LogEntry(2, 'test'), LogEntry(2, 'test')], {0: 3, 1: 3, 2: 3}, 2, 3),
+        ([LogEntry(1, 'test'), LogEntry(2, 'test'), LogEntry(2, 'test')], {0: 1, 1: 1, 2: 3}, 1, 1),
     ]
 )
 def test_raft_leader_commit(leader_log_entries, match_index, leader_term, expected_commit_index):
@@ -20,6 +20,7 @@ def test_raft_leader_commit(leader_log_entries, match_index, leader_term, expect
         log=leader_log,
         metadata_backend=MagicMock(),
         server_id=0,
+        state_machine=MagicMock(),
     )
     leader.current_term = leader_term
     leader.commit_index = 0

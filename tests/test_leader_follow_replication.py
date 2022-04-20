@@ -7,7 +7,7 @@ from raft.log import Log, OneIndexList, LogEntry
 from raft.raft_state_machine import Raft
 
 def get_log_entries(list):
-    return [LogEntry(item) for item in list]
+    return [LogEntry(item, "testcommand") for item in list]
 
 
 @pytest.fixture
@@ -21,37 +21,25 @@ def backend_metadata_mock():
 @pytest.mark.parametrize("leader_log_entries,follower_log_entries,expected",
     [
         ([], [], []),
-        ([LogEntry(1)], [], [LogEntry(1)]),
-        ([LogEntry(1), LogEntry(2)], [], [LogEntry(1), LogEntry(2)]),
-        ([LogEntry(1), LogEntry(2)], [LogEntry(1)], [LogEntry(1), LogEntry(2)]),
-        ([LogEntry(1), LogEntry(2)], [LogEntry(2)], [LogEntry(1), LogEntry(2)]),
-        ([LogEntry(1), LogEntry(2)], [LogEntry(2), LogEntry(3), LogEntry(6)], [LogEntry(1), LogEntry(2)]),
+        (get_log_entries([1]), [], get_log_entries([1])),
+        (get_log_entries([1, 2]), [], get_log_entries([1, 2])),
+        (get_log_entries([1, 2]), get_log_entries([1]), get_log_entries([1, 2])),
+        (get_log_entries([1, 2]), get_log_entries([2]), get_log_entries([1, 2])),
+        (get_log_entries([1, 2]), get_log_entries([2, 3, 6]), get_log_entries([1, 2])),
         (
-            [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4), LogEntry(4), LogEntry(5), LogEntry(5), LogEntry(6), LogEntry(6), LogEntry(6)],
-            [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4), LogEntry(4), LogEntry(5), LogEntry(5), LogEntry(6), LogEntry(6)],
-            [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4), LogEntry(4), LogEntry(5), LogEntry(5), LogEntry(6), LogEntry(6), LogEntry(6)],
+            get_log_entries([1, 1, 1, 4, 4, 5, 5, 6, 6, 6]),
+            get_log_entries([1, 1, 1, 4, 4, 5, 5, 6, 6]),
+            get_log_entries([1, 1, 1, 4, 4, 5, 5, 6, 6, 6]),
         ),
         (
-                [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4), LogEntry(4), LogEntry(5),
-                 LogEntry(5), LogEntry(6), LogEntry(6), LogEntry(6)],
-                [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4)],
-                [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4), LogEntry(4), LogEntry(5),
-                 LogEntry(5), LogEntry(6), LogEntry(6), LogEntry(6)],
+            get_log_entries([1, 1, 1, 4, 4, 5, 5, 6, 6, 6]),
+            get_log_entries([1, 1, 1, 4]),
+            get_log_entries([1, 1, 1, 4, 4, 5, 5, 6, 6, 6]),
         ),
         (
-                [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4), LogEntry(4), LogEntry(5),
-                 LogEntry(5), LogEntry(6), LogEntry(6), LogEntry(6)],
-                [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4)],
-                [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4), LogEntry(4), LogEntry(5),
-                 LogEntry(5), LogEntry(6), LogEntry(6), LogEntry(6)],
-        ),
-        (
-                [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4), LogEntry(4), LogEntry(5),
-                 LogEntry(5), LogEntry(6), LogEntry(6), LogEntry(6)],
-                [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4), LogEntry(4), LogEntry(5),
-                 LogEntry(5), LogEntry(6), LogEntry(6), LogEntry(6), LogEntry(7), LogEntry(7)],
-                [LogEntry(1), LogEntry(1), LogEntry(1), LogEntry(4), LogEntry(4), LogEntry(5),
-                 LogEntry(5), LogEntry(6), LogEntry(6), LogEntry(6), LogEntry(7), LogEntry(7)],
+            get_log_entries([1, 1, 1, 4, 4, 5, 5, 6, 6, 6]),
+            get_log_entries([1, 1, 1, 4, 4, 5, 5, 6, 6, 6, 7, 7]),
+            get_log_entries([1, 1, 1, 4, 4, 5, 5, 6, 6, 6, 7, 7]),
         ),
         (
             get_log_entries([1, 1, 1, 4, 4, 5, 5, 6, 6, 6]),
@@ -77,6 +65,7 @@ def test_replay_leader_log_single_follower(leader_log_entries, follower_log_entr
         log=leader_log,
         metadata_backend=backend_metadata_mock,
         server_id=0,
+        state_machine=MagicMock()
     )
     leader._set_leader()
     leader.current_term = 1
@@ -89,7 +78,8 @@ def test_replay_leader_log_single_follower(leader_log_entries, follower_log_entr
         outbox=shared_queue,
         log=follower_log,
         metadata_backend=backend_metadata_mock,
-        server_id=1
+        server_id=1,
+        state_machine=MagicMock(),
     )
     follower.current_term = 0
 
@@ -141,7 +131,8 @@ def test_expected_match_index(
         outbox=shared_queue,
         log=follower_log,
         metadata_backend=backend_metadata_mock,
-        server_id=1
+        server_id=1,
+        state_machine=MagicMock()
     )
     follower.current_term = 0
 
@@ -151,6 +142,5 @@ def test_expected_match_index(
     follower.handle_msg(leader_msg)
     follower_msg = follower.outbox.get()
     leader.handle_msg(follower_msg)
-
 
     assert leader.match_index == expected_match_index

@@ -9,7 +9,7 @@ logger = getLogger(__name__)
 @dataclass
 class LogEntry:
     term: int
-    # command: str
+    command: str
 
 
 class TermNotOk(Exception):
@@ -82,8 +82,7 @@ class Log:
         self.write_to_log(entry)
 
     def write_to_log(self, entry: LogEntry):
-        logger.info(f"Writing and flushing logs to file!! {entry}")
-        self.log_file.write(f"{entry.term}\n")
+        self.log_file.write(f"{entry.term}|{entry.command}\n")
         self.log_file.flush()
 
     def replay(self):
@@ -91,7 +90,10 @@ class Log:
         # need to set cursor to start at file since in append mode.
         self.log_file.seek(0)
         for line in self.log_file.readlines():
-            self.logs.append(LogEntry(int(line.strip())))
+            term, command = line.split('|')
+            term = int(term.strip())
+            command = command.strip()
+            self.logs.append(LogEntry(term, command))
 
     def truncate(self, index=1):
         self.logs = self.logs[:index]
