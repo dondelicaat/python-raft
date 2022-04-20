@@ -13,7 +13,7 @@ from raft.raft_server import RaftServer
 from raft.raft_state_machine import Raft
 
 logging.basicConfig(
-    filename=f"/Users/4468379/Documents/xccelerated/raft/debug_logs/log_{os.environ.get('SERVER_NUMBER')}",
+    filename=f"/tmp/raft/debug_logs/log_{os.environ.get('SERVER_NUMBER')}",
     filemode='w',
     format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
     datefmt='%H:%M:%S',
