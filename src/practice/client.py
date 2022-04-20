@@ -1,11 +1,11 @@
 import socket
 
 from practice.message import Message, SetValue, GetValue, DelValue, Close
-from src.practice.fixed_header_message import FixedHeaderMessageProtocol
+from raft.fixed_header_message import FixedHeaderMessageProtocol
 
 
 class Client:
-    def __init__(self, host, port, protocol: FixedHeaderMessageProtocol):
+    def __init__(self, host, port, protocol: FixedHeaderMessageProtocol, ):
         self.host = host
         self.port = port
         self.protocol = protocol

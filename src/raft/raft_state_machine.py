@@ -3,13 +3,13 @@ import math
 from enum import Enum
 from queue import Queue
 from random import randint
+from typing import Tuple, List
 
+from raft.kv_state_machine import KeyValStore
 from raft.log import Log, TermNotOk, LogNotCaughtUpException, LogEntry
 from raft.metadata_backend import MetadataBackend
 from raft.rpc_calls import AppendEntriesRequest, AppendEntriesReply, RequestVoteReply, \
-    RequestVoteRequest, Message, SetValue, Forward, Action, GetValue, Ok, Value
-
-# TODO: What happens when all machines go down? commit index lost, how is state machine rebuild from logs?
+    RequestVoteRequest, Message, SetValue, Forward, GetValue, DelValue, Ok
 
 logger = logging.getLogger(__name__)
 
@@ -23,13 +23,13 @@ class Role(Enum):
 class Raft:
     def __init__(
         self,
-        servers: dict,
-        server_id: int,
+        servers: List[Tuple[str, int]],
+        server_id: Tuple[str, int],
         outbox: Queue,
         log: Log,
         metadata_backend: MetadataBackend,
         timeout_provider=lambda: randint(15, 50),
-        state_machine={},
+        state_machine=KeyValStore(),
     ):
         self.role = 'follower'
         self.servers = servers
@@ -40,14 +40,14 @@ class Raft:
         self._voted_for = None
         self._current_term = None
 
-        self.commit_index = 0
+        self._commit_index = 0
         self.last_applied = 0
 
         self.next_index = {}
         self.match_index = {}
         self.votes_received = set()
 
-        self.client_messages_received = Queue()
+        self.client_messages_received = dict()
         self.state_machine = state_machine
 
         self.log = log
@@ -76,6 +76,22 @@ class Raft:
         self._voted_for = value
 
     @property
+    def commit_index(self):
+        return self._commit_index
+
+    @commit_index.setter
+    def commit_index(self, value):
+        self._commit_index = value
+        for log_entry in self.log.logs.to_list()[self.last_applied:self._commit_index]:
+            self.state_machine.apply_log_command(log_entry.command)
+            if self.role == 'leader' and log_entry.command in self.client_messages_received:
+                receiver = self.client_messages_received[log_entry.command]
+                logger.info(f"Sending acknowledgement back to {receiver}")
+                self.outbox.put(Message(Ok(), receiver=receiver, sender=self.server_id))
+
+        self.last_applied = self._commit_index
+
+    @property
     def current_term(self):
         if self._current_term is None:
             state = self.metadata_backend.read()
@@ -94,10 +110,11 @@ class Raft:
         if self.role != "leader":
             return
 
-        logging.info(f"Sending out heartbeat: next index: {self.next_index}, commit index: {self.commit_index}, log: {self.log.logs}")
+        logging.info(f"Sending out heartbeat: next index: {self.next_index}, "
+                     f"commit index: {self.commit_index}, log: {self.log.logs}")
 
         last_log_index = len(self.log)
-        for server_id, _ in self.servers.items():
+        for server_id in self.servers:
             if server_id == self.server_id:
                 continue
 
@@ -122,14 +139,16 @@ class Raft:
                 prev_log_term=prev_log_term,
                 leader_commit=self.commit_index
             )
-            self.outbox.put(Message(append_entries_request, sender=self.server_id, receiver=server_id))
+            self.outbox.put(
+                Message(append_entries_request, sender=self.server_id, receiver=server_id)
+            )
 
         self.reset_heartbeat(self.heartbeat_interval)
 
     def broadcast_election(self):
         assert self.role == 'candidate'
 
-        for server_id, _ in self.servers.items():
+        for server_id in self.servers:
             if server_id == self.server_id:
                 continue
 
@@ -143,7 +162,9 @@ class Raft:
                 last_log_term=last_log_term, last_log_index=last_log_index
             )
             logger.info(f"Request send: {request_vote_request}")
-            self.outbox.put(Message(request_vote_request, sender=self.server_id, receiver=server_id))
+            self.outbox.put(
+                Message(request_vote_request, sender=self.server_id, receiver=server_id)
+            )
 
     def handle_append_entries(self, message: AppendEntriesRequest, receiver_id):
         assert self.role == "follower"
@@ -158,8 +179,8 @@ class Raft:
             )
         except (TermNotOk, LogNotCaughtUpException):
             self.outbox.put(Message(
-                AppendEntriesReply(self.current_term, False, -1, entries_added=0)
-                , sender=self.server_id, receiver=receiver_id))
+                AppendEntriesReply(self.current_term, False, -1, entries_added=0),
+                sender=self.server_id, receiver=receiver_id))
             return
 
         if message.leader_commit > self.commit_index:
@@ -168,7 +189,9 @@ class Raft:
         last_log_index = len(self.log)
         self.outbox.put(
             Message(
-                AppendEntriesReply(self.current_term, True, last_log_index, entries_added=len(message.entries)),
+                AppendEntriesReply(
+                    self.current_term, True, last_log_index, entries_added=len(message.entries)
+                ),
                 sender=self.server_id,
                 receiver=receiver_id
             ))
@@ -187,12 +210,19 @@ class Raft:
             logger.info(f"Vote granted to {message.candidate_id}!")
             self.voted_for = message.candidate_id
             self.set_timeout()
-            self.outbox.put(Message(RequestVoteReply(self.current_term, True), sender=self.server_id, receiver=receiver_id))
+            self.outbox.put(
+                Message(RequestVoteReply(self.current_term, True),
+                        sender=self.server_id, receiver=receiver_id)
+            )
 
         logger.info(f"Vote not granted to {message.candidate_id}!")
-        self.outbox.put(Message(RequestVoteReply(self.current_term, False), sender=self.server_id, receiver=receiver_id))
+        self.outbox.put(
+            Message(RequestVoteReply(self.current_term, False),
+                    sender=self.server_id, receiver=receiver_id)
+        )
 
     def handle_request_vote_reply(self, message: RequestVoteReply, client_id):
+        logging.info(f"Vote received of {client_id} with value {message.vote_granted}")
         if self.role != 'candidate':
             return
 
@@ -214,40 +244,24 @@ class Raft:
             self.match_index[server_id] = message.last_log_index
 
         self.commit()
-        self.apply_logs()
-
-    def apply_logs(self):
-        logger.info(f"Trying to apply logs applied_idx: {self.last_applied}, commitindex: {self.commit_index}, to process: {self.client_messages_received.qsize()}")
-        assert self.last_applied <= self.commit_index
-
-        while self.last_applied < self.commit_index:
-            msg = self.client_messages_received.get()
-            reply = None
-            if isinstance(msg.action, SetValue):
-                self.state_machine[msg.action.key] = msg.action.value
-                reply = Message(Ok, sender=None, receiver=None, host=msg.host, port=msg.port)
-            elif isinstance(msg.action, GetValue):
-                try:
-                    value = self.state_machine[msg.action.key]
-                except KeyError:
-                    pass # How to deal with this?
-
-                reply = Message(Value(value), sender=None, receiver=None, host=msg.host, port=msg.port)
-
-            self.outbox.put(reply)
-            self.last_applied += 1
 
     def commit(self):
-        logger.info(f"match_index: {self.match_index}, commit index: {self.commit_index}, logs: {self.log.logs}, current term: {self.current_term}")
+        """ After heartbeat on restart should be set """
+        logger.info(f"match_index: {self.match_index}, commit index: {self.commit_index}, "
+                    f"logs: {self.log.logs}, current term: {self.current_term}")
         assert len(self.match_index) > 2 and len(self.match_index) % 2 == 1
 
         match_indices = sorted([index for index in self.match_index.values()])
         largest_majority_index = match_indices[math.floor(len(self.match_index) / 2)]
+
+        latest_commit_index = self.commit_index
         for idx in range(self.commit_index, largest_majority_index + 1):
             if idx == 0:
                 continue
             if self.log[idx].term == self.current_term:
-                self.commit_index = idx
+                latest_commit_index = idx
+
+        self.commit_index = latest_commit_index
 
     def handle_tick(self):
         self.timeout_ms -= 1
@@ -280,11 +294,16 @@ class Raft:
         self.voted_for = None
         self.leader_id = self.server_id
         last_log_index = len(self.log)
-        self.next_index = {idx: last_log_index + 1 for idx in self.servers}
-        self.match_index = {idx: 0 for idx in self.servers}
+        self.next_index = {server_id: last_log_index + 1 for server_id in self.servers}
+        self.match_index = {server_id: 0 for server_id in self.servers}
         self.votes_received = set()
         self.set_timeout()
         self.reset_heartbeat(timeout=0)
+        # self.accepting_read_only_requests = False
+        # commit no_op -> ensures we get up to date commit index
+        # self.logs.append(LogEntry(term, 'no-op'))
+        # set self.accepting_read_only_requests = True when no-op is committed
+        # Before each read-only request we have to check if we have a majority heartbeats (get queue of read only requests)
 
     def _set_follower(self):
         logger.info("Set role to follower")
@@ -331,17 +350,30 @@ class Raft:
 
     def handle_client_message(self, msg):
         logger.info(f"role: {self.role}, leader_id: {self.leader_id}")
+        # Drop all messages where there is no leader_id or it is None.
         if self.role == 'candidate':
-            # Todo: Wait for leader to be elected and then pass back leader id?
-            pass
+            return
         elif self.role == 'follower':
             if self.leader_id is not None:
-                leader_address = self.servers[self.leader_id]
+                logging.info("Forward leader_id to client!")
                 self.outbox.put(
-                    Message(Forward(*leader_address), receiver=None, sender=None, host=msg.host, port=msg.port)
+                    Message(Forward(*self.leader_id),
+                            receiver=msg.sender, sender=self.server_id)
                 )
-            # todo: what if leader still needs to be elected or first iteration?
+            return
         else:
             if isinstance(msg.action, SetValue):
-                self.log.append(LogEntry(self.current_term)) #Todo, also save actual command so it can be replayed / recovered
-                self.client_messages_received.put(msg)
+                command = f"{msg.action.message_id}:SET:{msg.action.key}:{msg.action.value}"
+                self.log.append(LogEntry(self.current_term, command))
+                self.client_messages_received[command] = msg.sender
+            elif isinstance(msg.action, GetValue):
+                command = f"GET:{msg.action.key}"
+                # todo: Add to read-only queue
+            elif isinstance(msg.action, DelValue):
+                command = f"DEL:{msg.action.key}"
+                self.log.append(LogEntry(self.current_term, command))
+                self.client_messages_received[command] = msg.sender
+            else:
+                raise ValueError("Unknown command received.")
+
+

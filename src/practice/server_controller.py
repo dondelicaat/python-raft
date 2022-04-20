@@ -46,7 +46,7 @@ class ServerController:
 
 if __name__ == "__main__":
     protocol = FixedHeaderMessageProtocol(header_size=8)
-    aof_log = "/Users/4468379/Documents/xccelerated/practice/data/aof.log"
+    aof_log = "/Users/4468379/Documents/xccelerated/raft/data/aof.log"
     storage_client = StorageClient(aof_file_path=aof_log)
 
     server_controller = ServerController(

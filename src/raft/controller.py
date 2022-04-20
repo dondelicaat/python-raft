@@ -13,7 +13,7 @@ from raft.raft_server import RaftServer
 from raft.raft_state_machine import Raft
 
 logging.basicConfig(
-    filename=f"/Users/4468379/Documents/xccelerated/raft/debug_logs/log_{os.environ.get('SERVER_ID')}",
+    filename=f"/Users/4468379/Documents/xccelerated/raft/debug_logs/log_{os.environ.get('SERVER_NUMBER')}",
     filemode='w',
     format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
     datefmt='%H:%M:%S',
@@ -24,14 +24,15 @@ logger = logging.getLogger(__name__)
 
 
 class RaftServerController:
-    def __init__(self, server_id: int, num_servers: int,
+    def __init__(self, server_number: int, num_servers: int,
                  log_file_handler: TextIO, metadata_file_handler: BinaryIO):
         base_port = 9090
         self.host = 'localhost'
-        self.port = base_port + server_id
+        self.port = base_port + server_number
         self.log_file = log_file_handler
         self.persistent_metadata = metadata_file_handler
-        servers = {idx: ('localhost', base_port + idx) for idx in range(num_servers)}
+        servers = [('localhost', base_port + idx) for idx in range(num_servers)]
+        server_id = ('localhost', base_port + server_number)
 
         assert len(servers) > 2 and len(servers) % 2 == 1
 
@@ -45,8 +46,6 @@ class RaftServerController:
             metadata_backend=MetadataBackend(file_handle=self.persistent_metadata)
         )
         self.raft_server = RaftServer(
-            host=self.host,
-            port=self.port,
             servers=servers,
             server_id=server_id,
             protocol=FixedHeaderMessageProtocol(8),
@@ -83,19 +82,23 @@ class RaftServerController:
         raft_clock_driver.start()
 
         while True:
-            print(
-                f"Raft status: timeout: {self.raft.timeout_ms}, role {self.raft.role}, "
-                f"current term: {self.raft.current_term}, votes received {self.raft.votes_received}"
-                , end='\r'
-            )
+            os.system('clear')
+            print("---Raft status---")
+            print(f"timeout      : {self.raft.timeout_ms}")
+            print(f"role         : {self.raft.role}")
+            print(f"term         : {self.raft.current_term}")
+            print(f"commit_index : {self.raft.commit_index}")
+            print(f"leader_id:   : {self.raft.leader_id}")
+            print(f"votes recvd  : {self.raft.votes_received}")
+            print(f"logs         : {self.raft.log.logs}")
             time.sleep(0.1)
 
 
 if __name__ == "__main__":
-    server_id = int(os.environ.get('SERVER_ID'))
+    server_number = int(os.environ.get('SERVER_NUMBER'))
     num_servers = int(os.environ.get('NUM_SERVERS'))
-    raft_data_log = f"/tmp/raft/data_{server_id}.log"
-    raft_metadata = f"/tmp/raft/metadata_{server_id}"
+    raft_data_log = f"/tmp/raft/data_{server_number}.log"
+    raft_metadata = f"/tmp/raft/metadata_{server_number}"
     Path(raft_data_log).touch()
     Path(raft_metadata).touch()
     with open(raft_data_log, 'r+') as log_file, \
@@ -104,7 +107,7 @@ if __name__ == "__main__":
         raft_server_controller = RaftServerController(
             log_file_handler=log_file,
             metadata_file_handler=metadata_file,
-            server_id=server_id,
+            server_number=server_number,
             num_servers=num_servers,
         )
         raft_server_controller.run()
